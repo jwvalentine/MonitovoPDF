@@ -506,3 +506,6 @@ scratch/
 
 # Output of the integration run: a generated template and a rendered label.
 integration/out/
+
+# Local NuGet package output.
+artifacts/

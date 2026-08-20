@@ -3,37 +3,37 @@ using PdfSharp.Fonts;
 namespace MonitovoPDF.Rendering;
 
 /// <summary>
-/// Resolves fonts from a directory of TrueType files shipped with the deployment.
+/// Resolves fonts from a directory of TrueType files shipped with the application.
 /// </summary>
 /// <remarks>
 /// Face names come from the file names, so <c>Arial.ttf</c> serves the "Arial" family and the
 /// optional <c>-Bold</c>, <c>-Italic</c> and <c>-BoldItalic</c> suffixes serve those styles. A
-/// family that cannot be matched falls back to the configured default so that an unexpected font
-/// in a template degrades the label rather than failing the request.
+/// family that cannot be matched falls back to the configured default, so an unexpected font in a
+/// template degrades the document rather than failing the render.
 /// </remarks>
-public sealed class FileSystemFontResolver : IFontResolver
+internal sealed class FileSystemFontResolver : IFontResolver
 {
     private readonly Dictionary<string, byte[]> _faces;
     private readonly string _fallbackFace;
-    private readonly ILogger<FileSystemFontResolver> _logger;
+    private readonly Action<string>? _onWarning;
 
-    public FileSystemFontResolver(string directory, string defaultFamily, ILogger<FileSystemFontResolver> logger)
+    public FileSystemFontResolver(string directory, string fallbackFamily, Action<string>? onWarning = null)
     {
-        _logger = logger;
+        _onWarning = onWarning;
+
+        if (!Directory.Exists(directory))
+            throw new DirectoryNotFoundException($"Font directory '{directory}' does not exist.");
+
         _faces = Directory.EnumerateFiles(directory, "*.ttf", SearchOption.AllDirectories)
             .ToDictionary(
-                path => Path.GetFileNameWithoutExtension(path),
+                path => Path.GetFileNameWithoutExtension(path)!,
                 File.ReadAllBytes,
                 StringComparer.OrdinalIgnoreCase);
 
         if (_faces.Count == 0)
             throw new InvalidOperationException($"No .ttf files found in font directory '{directory}'.");
 
-        _fallbackFace = _faces.ContainsKey(defaultFamily) ? defaultFamily : _faces.Keys.Order().First();
-
-        _logger.LogInformation(
-            "Loaded {FontCount} font face(s) from {FontDirectory}; fallback face is {FallbackFace}.",
-            _faces.Count, directory, _fallbackFace);
+        _fallbackFace = _faces.ContainsKey(fallbackFamily) ? fallbackFamily : _faces.Keys.Order().First();
     }
 
     public FontResolverInfo? ResolveTypeface(string familyName, bool isBold, bool isItalic)
@@ -53,8 +53,7 @@ public sealed class FileSystemFontResolver : IFontResolver
         if (_faces.ContainsKey(familyName))
             return new FontResolverInfo(familyName);
 
-        _logger.LogWarning("Font family {FontFamily} is not available; falling back to {FallbackFace}.",
-            familyName, _fallbackFace);
+        _onWarning?.Invoke($"Font family {familyName} is not available; falling back to {_fallbackFace}.");
         return new FontResolverInfo(_fallbackFace);
     }
 

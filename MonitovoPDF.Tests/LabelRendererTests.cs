@@ -1,8 +1,6 @@
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using MonitovoPDF.Rendering;
 using PdfSharp.Fonts;
 using PdfSharp.Pdf;
@@ -27,7 +25,7 @@ public class LabelRendererTests
         var options = new RenderingOptions();
         configure?.Invoke(options);
 
-        return new LabelRenderer(Options.Create(options), NullLogger<LabelRenderer>.Instance);
+        return new LabelRenderer(options);
     }
 
     [Fact]

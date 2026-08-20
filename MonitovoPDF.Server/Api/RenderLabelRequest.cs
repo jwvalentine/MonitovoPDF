@@ -1,7 +1,7 @@
 using System.Buffers.Text;
 using MonitovoPDF.Rendering;
 
-namespace MonitovoPDF.Api;
+namespace MonitovoPDF.Server.Api;
 
 /// <summary>
 /// Wire format for a label render. The template travels with the request because the service
@@ -32,12 +32,15 @@ public sealed record BarcodeRequest
     public string? Value { get; init; }
 }
 
+/// <summary>A barcode that has been validated against a known symbology.</summary>
+public sealed record BarcodeSpec(BarcodeType Type, string Value);
+
 /// <summary>A request that has passed validation and been decoded.</summary>
 public sealed record DecodedLabelRequest(
     byte[] Template,
     IReadOnlyDictionary<string, string> Text,
     IReadOnlyDictionary<string, byte[]> Images,
-    IReadOnlyDictionary<string, BarcodeContent> Barcodes);
+    IReadOnlyDictionary<string, BarcodeSpec> Barcodes);
 
 public static class RenderLabelRequestDecoder
 {
@@ -82,7 +85,7 @@ public static class RenderLabelRequestDecoder
                 errors.Add($"The value for field '{name}' exceeds the {options.MaxTextLength} character limit.");
         }
 
-        var decodedBarcodes = new Dictionary<string, BarcodeContent>(StringComparer.Ordinal);
+        var decodedBarcodes = new Dictionary<string, BarcodeSpec>(StringComparer.Ordinal);
         foreach (var (name, barcode) in barcodes)
         {
             if (string.IsNullOrWhiteSpace(name))
@@ -91,10 +94,10 @@ public static class RenderLabelRequestDecoder
                 continue;
             }
 
-            if (!BarcodeSymbology.TryParse(barcode?.Type, out var symbology))
+            if (!BarcodeTypes.TryParse(barcode?.Type, out var type))
             {
                 errors.Add($"Field '{name}' asks for an unknown barcode type '{barcode?.Type}'. "
-                    + $"Supported types are: {string.Join(", ", BarcodeSymbology.Names)}.");
+                    + $"Supported types are: {string.Join(", ", BarcodeTypes.Names)}.");
                 continue;
             }
 
@@ -103,7 +106,7 @@ public static class RenderLabelRequestDecoder
             else if (barcode.Value.Length > options.MaxTextLength)
                 errors.Add($"The barcode value for field '{name}' exceeds the {options.MaxTextLength} character limit.");
             else
-                decodedBarcodes[name] = new BarcodeContent(symbology, barcode.Value);
+                decodedBarcodes[name] = new BarcodeSpec(type, barcode.Value);
         }
 
         if (errors.Count > 0)

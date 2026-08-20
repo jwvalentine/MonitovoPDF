@@ -1,5 +1,4 @@
 using System.Globalization;
-using Microsoft.Extensions.Options;
 using PdfSharp.Drawing;
 using PdfSharp.Pdf;
 using PdfSharp.Pdf.AcroForms;
@@ -21,9 +20,9 @@ namespace MonitovoPDF.Rendering;
 /// themselves — including the print paths a label is most likely to take. Drawing into the page
 /// content stream instead produces a document that renders identically everywhere.
 /// </remarks>
-public sealed class LabelRenderer(IOptions<RenderingOptions> options, ILogger<LabelRenderer> logger)
+internal sealed class LabelRenderer(RenderingOptions? options = null)
 {
-    private readonly RenderingOptions _options = options.Value;
+    private readonly RenderingOptions _options = options ?? new RenderingOptions();
 
     private sealed record Placement(PdfPage Page, XRect Bounds, double FontSize, XStringAlignment Alignment);
 
@@ -49,8 +48,7 @@ public sealed class LabelRenderer(IOptions<RenderingOptions> options, ILogger<La
         }
         catch (Exception exception)
         {
-            logger.LogWarning("Rejected a template that could not be parsed: {Reason}.", exception.GetType().Name);
-            throw new TemplateRenderException("The template is not a readable PDF document.");
+            throw new TemplateRenderException("The template is not a readable PDF document.", exception);
         }
 
         using (document)
@@ -283,8 +281,8 @@ public sealed class LabelRenderer(IOptions<RenderingOptions> options, ILogger<La
         }
         catch (Exception exception)
         {
-            logger.LogWarning("Rejected an image for field {FieldName}: {Reason}.", fieldName, exception.GetType().Name);
-            throw new TemplateRenderException($"The image supplied for field '{fieldName}' could not be decoded.");
+            throw new TemplateRenderException(
+                $"The image supplied for field '{fieldName}' could not be decoded.", exception);
         }
 
         using (image)
@@ -333,12 +331,9 @@ public sealed class LabelRenderer(IOptions<RenderingOptions> options, ILogger<La
         }
         catch (Exception exception)
         {
-            // The reason is returned to the caller, who supplied the value, but never logged.
-            logger.LogWarning("Rejected a {Symbology} barcode for field {FieldName}: {Reason}.",
-                content.Symbology.Name, fieldName, exception.GetType().Name);
-
             throw new TemplateRenderException(
-                $"The value for field '{fieldName}' is not valid for {content.Symbology.Name}: {exception.Message}");
+                $"The value for field '{fieldName}' is not valid for {content.Symbology.Name}: {exception.Message}",
+                exception);
         }
 
         var bounds = placement.Bounds;

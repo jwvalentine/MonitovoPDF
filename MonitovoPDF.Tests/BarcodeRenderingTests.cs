@@ -1,5 +1,3 @@
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using MonitovoPDF.Rendering;
 using PdfSharp.Fonts;
 
@@ -39,7 +37,7 @@ public class BarcodeRenderingTests
     };
 
     private static LabelRenderer CreateRenderer() =>
-        new(Options.Create(new RenderingOptions()), NullLogger<LabelRenderer>.Instance);
+        new(new RenderingOptions());
 
     private static byte[] RenderBarcode(string type, string value)
     {

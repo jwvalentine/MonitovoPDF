@@ -7,15 +7,19 @@ Tell Claude: "Read CONTEXT.md before we start."
 
 ## What This Project Is
 
-**MonitovoPDF** is a self-hostable HTTP service that fills template PDFs with data, built on
-ASP.NET Core. It is **free and open source under the MIT licence**, published publicly, and
-intended to be usable inside commercial products without per-document licensing costs.
+**MonitovoPDF** is a **.NET library** that fills template PDFs with text, images and barcodes, in
+process. It is **free and open source under the MIT licence**, published publicly, and intended to
+be embedded in commercial products without per-document licensing costs.
 
-The motivating problem: commercial products that do this (Aspose.PDF, IronPDF and similar) are
-expensive per document or restrictively licensed for redistribution. The specific capability
-needed is narrow — take a template, replace named placeholders with text and images, return the
-finished document — and a small permissively-licensed service that does exactly that is more
-useful than a large dependency with a licence audit attached.
+It exists to replace the commercial PDF components that do this job inside an application at
+runtime — Aspose.PDF, IronPDF and similar. `MonitovoPDF.Server` is an optional ASP.NET Core host
+for callers who want the capability over HTTP; it is not the product.
+
+The motivating problem: those products are expensive per document, restrictively licensed for
+redistribution, or both. The capability actually needed is narrow — take a template, replace
+named placeholders with text, images and barcodes, return the finished document — and a small
+permissively-licensed library that does exactly that is more useful than a large dependency with
+a licence audit attached.
 
 See [PLAN.md](PLAN.md) for decisions made and still open, and [TODO.md](TODO.md) for immediate
 action items.
@@ -24,14 +28,14 @@ action items.
 
 ## Current State
 
-**The first rendering path is built and tested.** `POST /v1/labels` takes a base64 template plus
-text, image and barcode values, draws them into the page at the positions the template's form
-fields occupy, strips the fields, and returns a flat PDF. There is a `/health` endpoint. 57 tests
-cover the renderer, the request decoder and the HTTP surface.
+**The library is built, tested and packs.** `MonitovoPdf.Fill(template, fill => ...)` draws text,
+images and barcodes into the positions the template's form fields occupy, strips the fields, and
+returns a flat PDF. It targets `net8.0` and `net10.0`, and `dotnet pack` produces a package that
+has been verified by consuming it from a separate .NET 8 application. 78 tests cover the public
+API, the renderer, the request decoder and the HTTP surface.
 
-The service generates barcodes itself in 15 symbologies — see
-[BarcodeSymbology.cs](Rendering/BarcodeSymbology.cs) — drawn as vector rectangles rather than
-rasterised, so bar edges stay exact at print resolution.
+Barcodes are generated in 15 symbologies — see [BarcodeType.cs](MonitovoPDF/BarcodeType.cs) —
+drawn as vector rectangles rather than rasterised, so bar edges stay exact at print resolution.
 
 A `Dockerfile` builds a runnable image with fonts installed, and `integration/` holds a
 container-based end-to-end check: LibreOffice builds a real PDF form through its own API, the
@@ -55,7 +59,7 @@ This is not incidental. PDFsharp does not generate appearance streams for filled
 (upstream issue 64, closed as *wontfix*), so a document whose content lives in field values
 renders **blank** in viewers that do not build appearances themselves — including print paths a
 label is likely to take. Any change that moves back to setting field values reintroduces that bug.
-[LabelRendererTests.cs](MonitovoPDF.Tests/LabelRendererTests.cs) pins the current behaviour by
+[LabelRendererTests.cs](MonitovoPDF.Tests/LabelRendererTests.cs) pins this behaviour by
 asserting the drawn text appears in the page content stream.
 
 ---
@@ -78,29 +82,34 @@ in history after deletion. See the public-repository section of CLAUDE.md.
 
 ```
 MonitovoPDF/
-├── Program.cs                        # Minimal API: endpoints, options, font resolver wiring
-├── Api/
-│   └── RenderLabelRequest.cs         # Wire DTO, plus decoding and boundary validation
-├── Rendering/
-│   ├── LabelRenderer.cs              # The core: draws values into a template, strips the form
-│   ├── RenderingOptions.cs           # Configured ceilings and defaults
-│   ├── BarcodeSymbology.cs           # The symbologies callers may ask for
-│   ├── FileSystemFontResolver.cs     # Loads .ttf files from a configured directory
-│   └── TemplateRenderException.cs    # Caller-input failures, mapped to 4xx
+├── MonitovoPDF/                      # THE PRODUCT — the library, packed to NuGet
+│   ├── MonitovoPdf.cs                # Public entry point: Fill, UseFontDirectory
+│   ├── FillBuilder.cs                # Collects the values to draw
+│   ├── BarcodeType.cs                # Public symbology enum
+│   ├── BarcodeTypes.cs               # Name <-> type mapping for config-driven callers
+│   ├── Rendering/                    # All internal
+│   │   ├── LabelRenderer.cs          # The core: draws values in, strips the form
+│   │   ├── RenderingOptions.cs       # Ceilings and defaults (public, plain object)
+│   │   ├── BarcodeSymbology.cs       # Symbology to encoder mapping
+│   │   ├── FileSystemFontResolver.cs # Loads .ttf files from a directory
+│   │   └── TemplateRenderException.cs # Public; the exception to catch
+│   └── MonitovoPDF.csproj            # net8.0;net10.0, packable
+├── MonitovoPDF.Server/               # OPTIONAL HTTP host, references the library
+│   ├── Program.cs                    # Minimal API endpoints and font wiring
+│   ├── ServerOptions.cs              # Request size and response timeout
+│   ├── Api/RenderLabelRequest.cs     # Wire DTO, decoding and boundary validation
+│   └── appsettings.json              # Server and Rendering sections
 ├── MonitovoPDF.Tests/                # xUnit; synthetic PDF fixtures built in code
 ├── integration/                      # LibreOffice-driven end-to-end check, run via Docker
-│   ├── make_template.py              # Builds an AcroForm template through the UNO API
+│   ├── make_template.py              # Builds AcroForm templates through the UNO API
 │   ├── barcodes.py                   # All-symbologies sheet, and decoding it back
-│   ├── run_tests.py                  # Fills it against the running service and inspects the result
+│   ├── run_tests.py                  # Drives the service and inspects the results
 │   ├── Dockerfile                    # LibreOffice + poppler + zbar, libdmtx, zxing-cpp
 │   └── docker-compose.yml            # Runs the service and the check together
-├── Dockerfile                        # Runtime image; installs DejaVu so text can draw
-├── licenses/Apache-2.0.txt           # Shipped with the image for ZXing.Net
+├── Dockerfile                        # Image for the server; installs DejaVu so text can draw
+├── licenses/Apache-2.0.txt           # Ships in the package and the image, for ZXing.Net
 ├── THIRD-PARTY-NOTICES.md            # Redistributed works and the copyleft audit
-├── MonitovoPDF.csproj                # net10.0, nullable + implicit usings
-├── MonitovoPDF.slnx                  # Solution tying the app and test projects together
-├── appsettings.json                  # Defaults, including the Rendering ceilings
-├── Properties/launchSettings.json    # Local dev ports (http 5155, https 7255)
+├── MonitovoPDF.slnx                  # Solution tying the three projects together
 ├── CLAUDE.md                         # Governing rules for AI agents
 ├── AGENTS.md                         # Pointer to CLAUDE.md
 ├── PLAN.md                           # Decisions made and still open
@@ -114,8 +123,8 @@ MonitovoPDF/
 
 | Concern | Choice |
 |---|---|
-| Runtime | .NET 10 (`net10.0`) |
-| Web framework | ASP.NET Core minimal APIs |
+| Package | Library targeting `net8.0` and `net10.0`, with XML docs and symbols |
+| Optional host | ASP.NET Core minimal APIs on `net10.0` |
 | PDF engine | PDFsharp 6.2.4 (MIT, verified upstream) |
 | Barcodes | ZXing.Net 0.16.11 (Apache-2.0, no transitive dependencies) |
 | Tests | xUnit, with `Microsoft.AspNetCore.Mvc.Testing` for the HTTP surface |
@@ -134,8 +143,9 @@ restrictively licensed one, and the badge shows only the top layer.
 ```bash
 cd c:\dev\MonitovoPDF
 dotnet build          # currently 0 warnings, 0 errors
-dotnet test           # currently 57 passing
-dotnet run            # listens on http://localhost:5155
+dotnet test           # currently 78 passing
+dotnet pack MonitovoPDF/MonitovoPDF.csproj -c Release -o artifacts
+dotnet run --project MonitovoPDF.Server   # optional host, http://localhost:5155
 curl http://localhost:5155/health
 ```
 
@@ -176,3 +186,14 @@ Artefacts land in `integration/out/` (gitignored). The run exits non-zero if any
 - Never commit without stating the branch, the staged files and the commit message first,
   then waiting for explicit confirmation.
 - Never mention Claude, AI or any AI tooling in commits, PRs, issues or comments.
+
+---
+
+## The Other Thing To Know: fonts are process-wide
+
+PDFsharp resolves fonts through a single global hook, so a resolver installed by this library
+applies to everything in the process that uses PDFsharp. That is unavoidable from inside a
+library. `MonitovoPdf.UseFontDirectory` therefore refuses to displace a resolver it did not
+install unless `force: true` is passed, and a first render with nothing configured falls back to
+the host's installed fonts rather than failing. Do not make this implicit — a library that quietly
+changes how its host renders text is a bug waiting to be filed against the wrong project.
