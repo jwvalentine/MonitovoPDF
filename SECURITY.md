@@ -39,5 +39,6 @@ following are all worth reporting:
 
 ## Supported versions
 
-The project is pre-1.0, so only the most recent release receives fixes. Once 1.0 ships, this
-section will name a support window.
+Fixes go to the most recent release on the current major version. There is no backport to an
+earlier major, and there is only one maintainer, so an urgent fix will arrive as a patch on the
+latest version rather than as a set of them.

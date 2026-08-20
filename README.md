@@ -3,8 +3,11 @@
 A .NET library that fills template PDFs with text, images and barcodes — in process, with no
 per-document licensing.
 
-> **Status: early development.** The template-filling path described below works and is tested.
-> Expect breaking changes to the API before a 1.0 release.
+> **Status: 1.0.** The public API is settled and pinned by an approval test — breaking it now
+> requires a major version. Every symbology except MSI and Plessey is verified end to end by
+> rendering it, rasterising with two independent renderers at 300 and 203 dpi, and decoding it
+> back. What that does not establish is *your* content at *your* size on *your* printer: print
+> one and scan it before committing a label design to production.
 
 It exists to replace the commercial PDF components that do this — Aspose.PDF, IronPDF and
 similar — for the narrow job of populating a template. Those run inside your application at
@@ -25,11 +28,8 @@ document that renders identically everywhere.
 ## Install
 
 ```bash
-dotnet add package MonitovoPDF --prerelease
+dotnet add package MonitovoPDF
 ```
-
-The `--prerelease` flag is needed for now: releases carry a pre-release suffix while the API is
-still settling, and will drop it at 1.0.
 
 Targets `net8.0` and `net10.0`. Two dependencies, neither copyleft and neither bringing
 dependencies of its own: [PDFsharp](https://github.com/empira/PDFsharp) (MIT) and
@@ -406,8 +406,8 @@ the approved one — reviewing that diff is the point.
 The package follows [Semantic Versioning](https://semver.org). A release is cut by pushing a tag:
 
 ```bash
-git tag v0.2.0
-git push origin v0.2.0
+git tag v1.0.0
+git push origin v1.0.0
 ```
 
 The release workflow takes the version from the tag, builds, tests, packs, pushes to nuget.org and
@@ -420,8 +420,9 @@ hour. No publishing key is stored in this repository, so there is nothing here t
 The only stored value is `NUGET_USER`, the nuget.org profile name, which is an identifier rather
 than a credential.
 
-While the project is pre-1.0 the usual 0.x caveat applies: a minor bump may break the API. From
-1.0, a breaking change to the public surface requires a major bump.
+From 1.0, a breaking change to the public surface requires a major bump. The approval test's
+baseline is the definition of that surface, so a break shows up as a diff in review rather than
+being discovered by a consumer.
 
 ## Contributing
 
