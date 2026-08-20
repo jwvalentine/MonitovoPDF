@@ -68,14 +68,12 @@ public sealed class FillBuilder
     /// </summary>
     /// <exception cref="ArgumentException">The field name is empty, or already has a value.</exception>
     /// <exception cref="ArgumentOutOfRangeException">The barcode type is not a known value.</exception>
-    public FillBuilder SetBarcode(string field, BarcodeType type, string value)
+    public FillBuilder SetBarcode(string field, BarcodeType type, string value, BarcodeOptions? options = null)
     {
         Claim(field);
+        Check(value, options);
 
-        if (string.IsNullOrEmpty(value))
-            throw new ArgumentException("A barcode needs a value to encode.", nameof(value));
-
-        _barcodes[field] = new BarcodeContent(BarcodeSymbology.For(type), value);
+        _barcodes[field] = new BarcodeContent(BarcodeSymbology.For(type), value, options);
         return this;
     }
 
@@ -126,17 +124,33 @@ public sealed class FillBuilder
     /// The barcode replaces the placeholder as vector graphics rather than as a picture, so its
     /// edges stay exact at any resolution while still inheriting the placeholder's geometry.
     /// </remarks>
-    public FillBuilder SetBarcodeAt(int pageNumber, int imageIndex, BarcodeType type, string value)
+    public FillBuilder SetBarcodeAt(
+        int pageNumber, int imageIndex, BarcodeType type, string value, BarcodeOptions? options = null)
     {
         ClaimSlot(pageNumber, imageIndex);
+        Check(value, options);
 
+        _slots[(pageNumber, imageIndex)] =
+            new ImageSlotContent(null, new BarcodeContent(BarcodeSymbology.For(type), value, options));
+
+        return this;
+    }
+
+    /// <summary>Rejects a barcode request that cannot produce anything sensible.</summary>
+    private static void Check(string value, BarcodeOptions? options)
+    {
         if (string.IsNullOrEmpty(value))
             throw new ArgumentException("A barcode needs a value to encode.", nameof(value));
 
-        _slots[(pageNumber, imageIndex)] =
-            new ImageSlotContent(null, new BarcodeContent(BarcodeSymbology.For(type), value));
-
-        return this;
+        // A caption taking more than half the barcode's height leaves too little bar to scan, and
+        // is far likelier to be a mistaken unit — a point size, or a percentage — than an intent.
+        if (options?.CaptionHeightFraction is { } fraction && fraction is <= 0 or > 0.5)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                fraction,
+                "The readable value may take between none and half of a barcode's height.");
+        }
     }
 
     private void ClaimSlot(int pageNumber, int imageIndex)

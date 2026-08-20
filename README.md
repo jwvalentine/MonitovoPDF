@@ -266,6 +266,36 @@ you — nothing to do. What is *not* calculated is a check digit belonging to th
 digit of an EAN, UPC or GS1 number, or of an ITF-14. Supply those yourself, or the result is a
 barcode that scans cleanly and carries the wrong number.
 
+### Printing the value under the bars
+
+A barcode's value printed as readable text below it is what somebody falls back to when a scanner
+is not to hand or the symbol has been scuffed: they read the number off the label and key it in.
+A label carrying its number only as bars has no fallback at all.
+
+```csharp
+fill.SetBarcode("barcode", BarcodeType.Code128, "47028538", new BarcodeOptions { ShowValue = true });
+fill.SetBarcodeAt(1, 2, BarcodeType.Code128, "47028538", new BarcodeOptions { ShowValue = true });
+```
+
+It is **off by default**, because it changes the geometry rather than adding to it. The text is
+drawn inside the space the barcode was already given, so the bars give up the height it takes — a
+fifth of it by default, adjustable per barcode with `CaptionHeightFraction` or across a render with
+`RenderingOptions.BarcodeCaptionHeightFraction`. Shorter bars are marginally harder to scan at an
+angle, which makes this a deliberate trade rather than a free improvement.
+
+The text inherits the barcode's own position and rotation, so a barcode a template stood on its end
+gets its value turned to match, running alongside the bars. It does **not** inherit the stretch: a
+placeholder five times wider than it is tall would otherwise widen every glyph by that same five
+times, so each of the placeholder's axes is measured separately and the text drawn at a true point
+size. Sizing follows the space reserved unless `CaptionFontSizePoints` says otherwise, and a value
+too wide for its bars is shrunk until it fits.
+
+**The text is the value you supplied, not the value as encoded.** Where the symbology added a check
+character during encoding, that character is not shown — the number a person reads off the label is
+the number they were given to look up, and printing a longer one underneath would send them looking
+for something that does not exist. For EAN and UPC, where the specification prescribes both a
+grouped layout and the check digit, supply the complete number and expect a single plain line.
+
 ### Sizing a barcode field
 
 Quiet zones are included in the symbol rather than assumed around it, so a barcode never loses its

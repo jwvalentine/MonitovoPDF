@@ -75,12 +75,12 @@ app.MapPost("/v1/labels", async (
                 fill.SetImage(field, image);
 
             foreach (var (field, barcode) in decoded.Barcodes)
-                fill.SetBarcode(field, barcode.Type, barcode.Value);
+                fill.SetBarcode(field, barcode.Type, barcode.Value, barcode.Options);
 
             foreach (var slot in decoded.Slots)
             {
                 if (slot.Barcode is { } barcode)
-                    fill.SetBarcodeAt(slot.Page, slot.Index, barcode.Type, barcode.Value);
+                    fill.SetBarcodeAt(slot.Page, slot.Index, barcode.Type, barcode.Value, barcode.Options);
                 else
                     fill.SetImageAt(slot.Page, slot.Index, slot.Image!);
             }

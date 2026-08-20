@@ -236,6 +236,101 @@ def run_image_slot_checks():
               found, f"decoders read: {sorted(text for _, text in decoded)}")
 
 
+def decodes_everywhere(pdf_path, prefix, symbology, value):
+    """Checks a barcode reads back under both renderers, at both resolutions.
+
+    A barcode carrying its value as readable text has shorter bars than one that does not,
+    because the text is drawn inside the space the barcode was given. Shorter bars are what
+    a scanner has less of to work with, so a caption is only worth having if the symbol
+    still scans with one — which is the thing to measure rather than assume.
+    """
+    for label, rasterise, dpi in (("poppler", barcodes.rasterise, 300),
+                                  ("pdfium", barcodes.rasterise_with_pdfium, 300),
+                                  ("pdfium", barcodes.rasterise_with_pdfium, 203)):
+        images = rasterise(pdf_path, os.path.join(OUTPUT_DIR, f"{prefix}-{label}-{dpi}"), dpi)
+        decoded, _ = barcodes.decode_all(images)
+
+        found = any(fmt == symbology and text == value for fmt, text in decoded)
+        check(f"{prefix} still scans when rasterised by {label} at {dpi} dpi",
+              found, f"decoders read: {sorted(text for _, text in decoded)}")
+
+
+def run_barcode_caption_checks(template_b64):
+    """Prints a barcode's value as readable text beneath it, and reads both back.
+
+    This is the fallback somebody uses when a scanner is not to hand or the symbol has been
+    scuffed: they read the number off the label and key it in. So there are two things to
+    prove, and they pull against each other — the number has to be readable as text, and the
+    bars have to still scan having given up the height the text took.
+    """
+    value = "47028538"
+
+    print("\nPrinting a barcode's value as readable text, in a form field")
+    status, body, _ = post("/v1/labels", {
+        "template": template_b64,
+        "barcodes": {"barcode": {"type": "code128", "value": value, "showValue": True}},
+    })
+
+    check("a captioned barcode renders into a field", status == 200, f"status {status}: {body[:300]!r}")
+
+    if status == 200:
+        path = os.path.join(OUTPUT_DIR, "caption-field.pdf")
+        with open(path, "wb") as handle:
+            handle.write(body)
+        print(f"        wrote {path} ({len(body)} bytes)")
+
+        # An independent extractor reading it is what proves the value is real text in an
+        # embedded font, rather than something only this library knows how to interpret.
+        check("the value is readable as text beneath the bars", value in extract_text(path),
+              f"pdftotext saw: {extract_text(path).strip()[:200]!r}")
+        decodes_everywhere(path, "caption-field", "code128", value)
+
+    print("\nThe same barcode without a caption, as a control")
+    status, body, _ = post("/v1/labels", {
+        "template": template_b64,
+        "barcodes": {"barcode": {"type": "code128", "value": value}},
+    })
+
+    if status == 200:
+        path = os.path.join(OUTPUT_DIR, "caption-none.pdf")
+        with open(path, "wb") as handle:
+            handle.write(body)
+
+        # Without this the readable-text check above would pass on a label that merely happened
+        # to carry the number somewhere else.
+        check("an uncaptioned barcode carries no such text", value not in extract_text(path),
+              f"pdftotext saw: {extract_text(path).strip()[:200]!r}")
+
+    # A placeholder addressed by position, and then the same one stood on its end. Rotation is
+    # where a caption is easiest to get wrong: the bars inherit the placeholder's transform
+    # whatever it is, so text that does not inherit the same one ends up lying on its side.
+    for name, transform in (("upright", "170 0 0 60 15 90"), ("turned", "0 170 -60 0 180 15")):
+        print(f"\nPrinting a barcode's value on the {name} image placeholder")
+
+        status, body, _ = post("/v1/labels", {
+            "template": base64.b64encode(barcodes.slot_template(transform=transform)).decode(),
+            "barcodesAt": [{"page": 1, "index": 1, "type": "code128",
+                            "value": value, "showValue": True}],
+        })
+
+        check(f"the {name} captioned placeholder renders", status == 200,
+              f"status {status}: {body[:300]!r}")
+
+        if status != 200:
+            continue
+
+        path = os.path.join(OUTPUT_DIR, f"caption-{name}.pdf")
+        with open(path, "wb") as handle:
+            handle.write(body)
+        print(f"        wrote {path} ({len(body)} bytes)")
+
+        check(f"the value on the {name} placeholder is readable as text",
+              value in extract_text(path),
+              f"pdftotext saw: {extract_text(path).strip()[:200]!r}")
+
+        decodes_everywhere(path, f"caption-{name}", "code128", value)
+
+
 def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     template_path = os.path.join(OUTPUT_DIR, "template.pdf")
@@ -319,6 +414,7 @@ def main():
 
     run_barcode_checks()
     run_image_slot_checks()
+    run_barcode_caption_checks(template_b64)
 
     print()
     if failures:

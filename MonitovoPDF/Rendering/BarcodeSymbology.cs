@@ -56,8 +56,19 @@ internal sealed record BarcodeSymbology(
     }
 }
 
-/// <summary>A barcode to draw into a named template field.</summary>
-internal sealed record BarcodeContent(BarcodeSymbology Symbology, string Value);
+/// <summary>A barcode to draw, and any caller overrides for how it should look.</summary>
+internal sealed record BarcodeContent(BarcodeSymbology Symbology, string Value, BarcodeOptions? Options)
+{
+    /// <summary>Whether the value is printed as readable text below the bars.</summary>
+    public bool ShowsValue => Options?.ShowValue == true;
+
+    /// <summary>
+    /// The share of the barcode's height the readable value takes, or zero when none is shown.
+    /// </summary>
+    public double CaptionFraction(RenderingOptions options) => ShowsValue
+        ? Options?.CaptionHeightFraction ?? options.BarcodeCaptionHeightFraction
+        : 0;
+}
 
 /// <summary>Text to draw into a field, with any caller overrides for how it should look.</summary>
 internal sealed record TextContent(string Value, TextOptions? Options);

@@ -73,9 +73,9 @@ internal static class TemplateInspector
             slot.ResourceName,
             slot.PixelWidth,
             slot.PixelHeight,
-            drawn.TryGetValue(slot.ResourceName, out var rectangles)
-                ? [.. rectangles.Select(rectangle => new FieldPlacement(
-                    pageNumber, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height))]
+            drawn.TryGetValue(slot.ResourceName, out var boxes)
+                ? [.. boxes.Select(box => new FieldPlacement(
+                    pageNumber, box.Bounds.X, box.Bounds.Y, box.Bounds.Width, box.Bounds.Height))]
                 : []))];
     }
 

@@ -54,6 +54,9 @@ public sealed record BarcodeAtRequest
 
     /// <summary>The content to encode.</summary>
     public string? Value { get; init; }
+
+    /// <summary>Whether the value is printed as readable text below the bars.</summary>
+    public bool ShowValue { get; init; }
 }
 
 /// <summary>A barcode the service should generate rather than the caller supplying an image.</summary>
@@ -64,10 +67,13 @@ public sealed record BarcodeRequest
 
     /// <summary>The content to encode. What is valid depends on the symbology.</summary>
     public string? Value { get; init; }
+
+    /// <summary>Whether the value is printed as readable text below the bars.</summary>
+    public bool ShowValue { get; init; }
 }
 
 /// <summary>A barcode that has been validated against a known symbology.</summary>
-public sealed record BarcodeSpec(BarcodeType Type, string Value);
+public sealed record BarcodeSpec(BarcodeType Type, string Value, BarcodeOptions? Options);
 
 /// <summary>A request that has passed validation and been decoded.</summary>
 public sealed record SlotSpec(int Page, int Index, byte[]? Image, BarcodeSpec? Barcode);
@@ -144,7 +150,7 @@ public static class RenderLabelRequestDecoder
             else if (barcode.Value.Length > options.MaxTextLength)
                 errors.Add($"The barcode value for field '{name}' exceeds the {options.MaxTextLength} character limit.");
             else
-                decodedBarcodes[name] = new BarcodeSpec(type, barcode.Value);
+                decodedBarcodes[name] = new BarcodeSpec(type, barcode.Value, Options(barcode.ShowValue));
         }
 
         if (errors.Count > 0)
@@ -182,7 +188,9 @@ public static class RenderLabelRequestDecoder
             else if (string.IsNullOrEmpty(barcode.Value))
                 errors.Add($"The barcode for image {barcode.Index} on page {barcode.Page} has no value.");
             else
-                slots.Add(new SlotSpec(barcode.Page, barcode.Index, null, new BarcodeSpec(type, barcode.Value)));
+                slots.Add(new SlotSpec(
+                    barcode.Page, barcode.Index, null,
+                    new BarcodeSpec(type, barcode.Value, Options(barcode.ShowValue))));
         }
 
         foreach (var entry in request.ImagesAt ?? [])
@@ -199,6 +207,16 @@ public static class RenderLabelRequestDecoder
         decoded = new DecodedLabelRequest(templateBytes, text, decodedImages, decodedBarcodes, slots);
         return true;
     }
+
+    /// <summary>
+    /// The library's barcode options, or none when the request asks for nothing beyond bars.
+    /// </summary>
+    /// <remarks>
+    /// Null rather than an all-defaults instance, so the drawing path can tell "no preference"
+    /// from "explicitly the default" without the two being spelled the same.
+    /// </remarks>
+    private static BarcodeOptions? Options(bool showValue) =>
+        showValue ? new BarcodeOptions { ShowValue = true } : null;
 
     private static bool TryDecodeBase64(string value, int maxBytes, out byte[] bytes)
     {

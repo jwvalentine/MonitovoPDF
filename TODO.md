@@ -7,43 +7,23 @@ Last reviewed: 2026-08-20
 
 ---
 
-## Before the first release — needs Joe
+## Needs Joe
 
-These cannot be done from the repository, and the release workflow will fail without the first.
+These cannot be done from the repository.
 
-- [ ] **Set up Trusted Publishing on nuget.org.** Sign in, then username → Trusted Publishing →
-      add a policy. No API key is involved: the workflow proves its identity with a short-lived
-      OIDC token and gets a key valid for one hour, so there is no long-lived secret to leak or
-      rotate. The fields:
-
-      | Field | Value |
-      |---|---|
-      | Repository Owner | `jwvalentine` |
-      | Repository | `MonitovoPDF` |
-      | Workflow File | `release.yml` — file name only, no `.github/workflows/` path |
-      | Environment | `release`, or blank if the environment is not created |
-      | Glob Patterns and Packages | `MonitovoPDF` |
-
-      The last field scopes which package ids the temporary key may push, the same way API key
-      scoping always has, and it is **required**. The Microsoft documentation page does not
-      mention it yet. Because the package does not exist on nuget.org, it cannot be picked from
-      a list — type the id in as a pattern. Keep it to the exact id rather than `MonitovoPDF*`,
-      which would also match ids like `MonitovoPDFSomethingElse`. If companion packages appear
-      later, add `MonitovoPDF.*` on a second line; the field takes one entry per line.
-
-      *If Trusted Publishing is not visible in the account, it has not rolled out there yet —
-      the API-key version of the workflow is recoverable from git history as a stopgap.*
-- [ ] **Add the `NUGET_USER` repository secret**, set to the nuget.org username (the profile
-      name, not an email address). It is the one input the login step needs.
-- [ ] **Create the `release` GitHub environment** and consider adding yourself as a required
-      reviewer. That turns publishing into a deliberate approval rather than a side effect of
-      pushing a tag.
-- [ ] **Reserve the `MonitovoPDF` package id on nuget.org** before someone else does, and check
-      whether the `Monitovo` prefix qualifies for id-prefix reservation, which earns the verified
-      check mark on the package page. Tagging `v0.1.0-preview.1` claims the id and exercises the
-      release path in one go.
+- [ ] **Confirm image placeholder ordering against a real template.** Placeholders are numbered
+      by resource name with embedded numbers compared numerically, so `/Im2` precedes `/Im10`.
+      That rule is ours, stated and tested, but whether it matches the order the existing
+      templates were authored against has not been checked against one of them. Getting it wrong
+      does not fail loudly: it swaps one placeholder's content for another's and the document
+      still renders. `Inspect` reports the numbering alongside each placeholder's resource name,
+      pixel size and drawn position, which is enough to check a template against expectations.
 - [ ] **Enable branch protection on `main`**: require a pull request and require the CI check to
       pass. The no-direct-commits rule is documented but not enforced.
+- [ ] **Unlist `0.1.0-preview.1` on nuget.org** once nothing depends on it. It predates the
+      rendering fixes in `0.2.0`, so it is the wrong thing for a new caller to land on.
+- [ ] **Check whether the `Monitovo` prefix qualifies for id-prefix reservation** on nuget.org,
+      which earns the verified check mark on the package page.
 
 ## Next up
 
@@ -60,7 +40,9 @@ These cannot be done from the repository, and the release workflow will fail wit
 - [ ] Decide whether the library should compute **data** check digits. Symbology check characters
       are already generated as part of the encoding; what is not is the digit belonging to the data
       — the last digit of an EAN, UPC or GS1 number, or of an ITF-14. A caller who gets it wrong
-      gets a barcode that scans cleanly and carries the wrong number.
+      gets a barcode that scans cleanly and carries the wrong number. Related: the readable value
+      printed under a barcode is the value as supplied, so an EAN or UPC gets a single plain line
+      rather than the grouped layout with an outset check digit that the specification prescribes.
 
 ## Hardening
 

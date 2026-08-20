@@ -3,6 +3,17 @@ using PdfSharp.Pdf;
 
 namespace MonitovoPDF.Rendering;
 
+/// <summary>Where a page draws an XObject once: the box it lands in, and a way inside it.</summary>
+/// <param name="Bounds">The bounding box on the page, measured from the top-left of the page.</param>
+/// <param name="ToCanvas">
+/// Maps points measured from the top-left of the drawn box, along the box's own axes, into the
+/// coordinates the page is drawn in. Applying it puts a caller inside the placeholder: position
+/// and rotation are inherited, while a point stays a point however the placeholder is stretched.
+/// </param>
+/// <param name="WidthPoints">The box's width, measured along its own axis rather than the page's.</param>
+/// <param name="HeightPoints">The box's height, measured along its own axis.</param>
+internal sealed record DrawnBox(XRect Bounds, XMatrix ToCanvas, double WidthPoints, double HeightPoints);
+
 /// <summary>
 /// Works out where a page draws each of its XObjects, by following the content stream.
 /// </summary>
@@ -38,10 +49,10 @@ internal static class PlacedXObjects
             ((A * x) + (C * y) + E, (B * x) + (D * y) + F);
     }
 
-    /// <summary>Returns the rectangles each XObject name is drawn into, in page coordinates.</summary>
-    public static Dictionary<string, List<XRect>> On(PdfPage page)
+    /// <summary>Returns every place each XObject name is drawn, in the order the page draws them.</summary>
+    public static Dictionary<string, List<DrawnBox>> On(PdfPage page)
     {
-        var found = new Dictionary<string, List<XRect>>(StringComparer.Ordinal);
+        var found = new Dictionary<string, List<DrawnBox>>(StringComparer.Ordinal);
 
         var content = Content(page);
         if (content.Length == 0)
@@ -83,10 +94,10 @@ internal static class PlacedXObjects
                     break;
 
                 case "Do" when lastName is not null:
-                    if (!found.TryGetValue(lastName, out var rectangles))
-                        found[lastName] = rectangles = [];
+                    if (!found.TryGetValue(lastName, out var boxes))
+                        found[lastName] = boxes = [];
 
-                    rectangles.Add(BoundsOf(current, page));
+                    boxes.Add(Describe(current, page));
                     break;
             }
 
@@ -94,6 +105,40 @@ internal static class PlacedXObjects
         }
 
         return found;
+    }
+
+    /// <summary>
+    /// Works out where one drawing operator puts its XObject, and how to draw inside it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The transform maps the unit square onto the page, so the length of each of its two axis
+    /// vectors is the box's size along that axis — which is not the same as the bounding box once
+    /// the placeholder is rotated, and is the measurement that matters for anything drawn inside.
+    /// </para>
+    /// <para>
+    /// Dividing each axis by its own length is what removes the stretch: it leaves a coordinate
+    /// system carrying the placeholder's position and rotation but measured in real points, so
+    /// text drawn in it comes out the shape the font intended rather than the shape the
+    /// placeholder happens to be.
+    /// </para>
+    /// </remarks>
+    private static DrawnBox Describe(Matrix matrix, PdfPage page)
+    {
+        var width = Math.Sqrt((matrix.A * matrix.A) + (matrix.B * matrix.B));
+        var height = Math.Sqrt((matrix.C * matrix.C) + (matrix.D * matrix.D));
+
+        if (width <= 0 || height <= 0)
+            return new DrawnBox(BoundsOf(matrix, page), XMatrix.Identity, 0, 0);
+
+        // The page's own vertical axis runs upwards from its bottom-left and the drawing canvas
+        // runs downwards from its top-left, so both are flipped on the way through.
+        var toCanvas = new XMatrix(
+            matrix.A / width, -matrix.B / width,
+            -matrix.C / height, matrix.D / height,
+            matrix.C + matrix.E, page.Height.Point - matrix.D - matrix.F);
+
+        return new DrawnBox(BoundsOf(matrix, page), toCanvas, width, height);
     }
 
     /// <summary>Maps the unit square through the transform and takes its bounding box.</summary>

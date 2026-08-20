@@ -325,3 +325,38 @@ The alternative considered was addressing by resource name, which is stabler. It
 the primary form because the templates this exists for were authored against ordinals, and a
 migration that requires re-authoring the templates defeats the purpose. Name-based addressing
 remains available to add if a case for it appears.
+
+## Decision 14 — The value under the bars — **DECIDED: draw it on the page, not into the symbol**
+
+A barcode's value printed as readable text below it is the fallback when a scanner is not to hand
+or the symbol has been damaged: somebody reads the number and keys it in. A label carrying its
+number only as bars has no fallback at all. It is normal practice for printed barcodes and part of
+the specification for some symbologies, so it belongs in the library rather than in each caller.
+
+It is **off by default**. The text goes inside the space the barcode was already given rather than
+beside it, so the bars give up the height it takes. That is a trade — bar height is what lets a
+scanner read a symbol that is not squarely presented to it — and a trade should be asked for.
+
+**Where the text is drawn was the real decision.** A barcode replacing an image placeholder is a
+form XObject, and drawing the text into that form would inherit the placeholder's rotation for
+free. It was rejected for two reasons. A form built by hand has no font to draw with, so the text
+would have to use one of the fourteen standard faces that are never embedded — reintroducing the
+dependency on what the consumer has installed that flattening the template exists to remove. And
+the form is the unit square stretched onto the placeholder, so every glyph would be stretched by
+the placeholder's proportions along with it.
+
+So the text is drawn onto the page, in the engine's own text path with a real embedded font, under
+a transform recovered from the placeholder. That transform is decomposed rather than used whole:
+each of the placeholder's two axes is measured separately, which keeps its position and rotation
+while discarding its stretch. A barcode a template stood on its end gets its value turned to match;
+a placeholder five times wider than it is tall gets text at a true point size.
+
+The cost is that this only works where the placement can be recovered — a placeholder the page
+declares but never draws has no position to inherit, and that is refused rather than dropped
+silently, since the value is the whole point of asking.
+
+**The text is the value as supplied, not as encoded.** A check character added during encoding is
+not shown. The number a person reads off the label is the number they were given to look up, and
+printing a longer one underneath would send them looking for something that does not exist.
+EAN and UPC prescribe a grouped layout and an outset digit; that is not attempted, and a caller
+needing it should say so.
