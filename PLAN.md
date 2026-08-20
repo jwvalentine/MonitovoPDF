@@ -89,19 +89,26 @@ The package follows [Semantic Versioning](https://semver.org). Releases are cut 
 repository held at that tag cannot disagree. The `<Version>` in the project file is the working
 version between releases and is overridden at pack time.
 
-**While the project is pre-1.0**, the usual 0.x caveat applies: a minor bump may break the API.
-That freedom is the reason to stay at 0.x until the surface has been used in anger. The public
-API is pinned by an approval test, so a break is visible in review as a diff rather than
-discovered by a consumer.
+**From 1.0**, a breaking change to the public API requires a major bump. The approval test's
+baseline is the definition of that surface, and changing it is the moment to ask whether a major
+version is warranted — a break shows up as a diff in review rather than being discovered by a
+consumer.
 
-**From 1.0 onwards**, a breaking change to the public API requires a major bump. The approval
-test's baseline is the definition of that surface, and changing it is the moment to ask whether a
-major version is warranted.
+The 0.x series took the opposite freedom, and used it: `0.3.0` and `0.4.0` each broke something.
+That is what 1.0 gives up, which is the whole point of declaring it — the surface stops being
+something the project can revise at will and becomes something callers can build against.
 
-Prereleases use a suffix the tag carries — `v0.1.0-preview.1`, `v1.0.0-rc.1` — and publish like
-any other version. NuGet's guidance is to publish a non-stable package as a pre-release, so the
-releases stay suffixed until the API has been used in anger; consumers install with
-`--prerelease` until then.
+1.0 is warranted by use rather than by elapsed time: labels rendered by this library now print on
+real hardware, in place of the commercial component they were written to replace. That is the
+evidence that matters, and no amount of further synthesised testing would have produced it.
+
+What 1.0 does **not** claim is that every code path has been exercised that far. The newest of
+them, filling placeholders addressed by position, is also the least worn: it shipped in `0.3.0`
+and a defect in it was found and fixed within a day. The response to that is not to withhold the
+version but to hold the API steady while the paths behind it settle, which is exactly what a
+major version permits.
+
+Prereleases use a suffix the tag carries — `v1.1.0-rc.1` — and publish like any other version.
 
 ## Decision 5 — Distribution — **DECIDED: a NuGet package, with a container for the host**
 

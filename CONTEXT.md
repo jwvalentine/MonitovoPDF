@@ -160,7 +160,7 @@ restrictively licensed one, and the badge shows only the top layer.
 cd c:\dev\MonitovoPDF
 dotnet build          # currently 0 warnings, 0 errors
 dotnet test           # currently 137 passing
-dotnet pack MonitovoPDF/MonitovoPDF.csproj -c Release -o artifacts   # 0.1.0-preview.1
+dotnet pack MonitovoPDF/MonitovoPDF.csproj -c Release -o artifacts   # 1.0.0
 dotnet run --project MonitovoPDF.Server   # optional host, http://localhost:5155
 curl http://localhost:5155/health
 ```

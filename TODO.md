@@ -20,16 +20,23 @@ These cannot be done from the repository.
       pixel size and drawn position, which is enough to check a template against expectations.
 - [ ] **Enable branch protection on `main`**: require a pull request and require the CI check to
       pass. The no-direct-commits rule is documented but not enforced.
-- [ ] **Unlist `0.1.0-preview.1` on nuget.org** once nothing depends on it. It predates the
-      rendering fixes in `0.2.0`, so it is the wrong thing for a new caller to land on.
+- [ ] **Unlist every `0.x` prerelease on nuget.org once `1.0.0` is published.** `--prerelease`
+      resolves to the newest prerelease, so leaving them listed means a caller who keeps the flag
+      out of habit lands on one instead of on 1.0. `0.3.0-preview.1` is the one that matters:
+      filling a form field with an image and a placeholder by position in the same call fills the
+      wrong placeholder there, silently, because the drawn image joins the page's resources and
+      renumbers them.
 - [ ] **Check whether the `Monitovo` prefix qualifies for id-prefix reservation** on nuget.org,
       which earns the verified check mark on the package page.
 
 ## Next up
 
-- [ ] **Print a rendered label on real hardware.** A LibreOffice-authored template is now filled
-      end to end in Docker and read back with poppler, but nothing has been sent to an actual label
-      printer. That is the last unverified link in the chain.
+- [ ] **Scan a printed label with a real scanner.** Labels rendered by this library now print on
+      real hardware, so the chain from template to paper is proven. What is not is the last step
+      of it: every barcode here has been decoded from a software rasterisation, never off a
+      printed label through a scanner's optics. Thermal printing is where a symbol picks up the
+      defects a rasteriser has no way to introduce — ink spread widening the bars, a worn head
+      thinning them, the media moving under the print line.
 - [ ] **Enable Dependabot for NuGet and GitHub Actions.** This matters more now that every action
       is pinned to a commit: a pin never moves, so without something proposing updates the
       workflows quietly fall behind on security fixes. Dependabot understands the pinned
