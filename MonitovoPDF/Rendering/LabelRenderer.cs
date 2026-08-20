@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using PdfSharp.Drawing;
 using PdfSharp.Pdf;
 using PdfSharp.Pdf.AcroForms;
@@ -25,7 +26,8 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
     private readonly RenderingOptions _options = options ?? new RenderingOptions();
 
     private sealed record Placement(
-        PdfPage Page, XRect Bounds, string FontFamily, double FontSize, XStringAlignment Alignment);
+        PdfPage Page, XRect Bounds, string FontFamily, double FontSize, XStringAlignment Alignment,
+        bool IsMultiline);
 
     /// <summary>Families already found to be unavailable, so each is only attempted once.</summary>
     private readonly HashSet<string> _unavailableFamilies = new(StringComparer.OrdinalIgnoreCase);
@@ -52,9 +54,9 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
     /// the same name and returns the finished document.
     /// </summary>
     /// <exception cref="TemplateRenderException">The template or the requested fields are unusable.</exception>
-    public byte[] Render(
+    public (byte[] Pdf, IReadOnlyList<string> Unmatched) Render(
         byte[] templateBytes,
-        IReadOnlyDictionary<string, string> textValues,
+        IReadOnlyDictionary<string, TextContent> textValues,
         IReadOnlyDictionary<string, byte[]> imageValues,
         IReadOnlyDictionary<string, BarcodeContent>? barcodeValues = null)
     {
@@ -89,9 +91,10 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
 
             // Resolve every requested field before drawing anything, so an unknown name fails the
             // whole request rather than leaving a half-populated label.
-            var textPlacements = Resolve(textValues.Keys, fields, widgetPages, form, formAppearance);
-            var imagePlacements = Resolve(imageValues.Keys, fields, widgetPages, form, formAppearance);
-            var barcodePlacements = Resolve(barcodeValues.Keys, fields, widgetPages, form, formAppearance);
+            var unmatched = new List<string>();
+            var textPlacements = Resolve(textValues.Keys, fields, widgetPages, form, formAppearance, unmatched);
+            var imagePlacements = Resolve(imageValues.Keys, fields, widgetPages, form, formAppearance, unmatched);
+            var barcodePlacements = Resolve(barcodeValues.Keys, fields, widgetPages, form, formAppearance, unmatched);
 
             var canvases = new Dictionary<PdfPage, XGraphics>();
             try
@@ -124,7 +127,7 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
 
             using var output = new MemoryStream();
             document.Save(output, closeStream: false);
-            return output.ToArray();
+            return (output.ToArray(), unmatched);
 
             XGraphics CanvasFor(PdfPage page)
             {
@@ -142,36 +145,39 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
 
     private Dictionary<string, IReadOnlyList<Placement>> Resolve(
         IEnumerable<string> names,
-        IReadOnlyDictionary<string, PdfAcroField> fields,
+        IReadOnlyDictionary<string, List<PdfAcroField>> fields,
         IReadOnlyDictionary<PdfObjectID, PdfPage> widgetPages,
         PdfAcroForm form,
-        string? formAppearance)
+        string? formAppearance,
+        List<string> unmatched)
     {
         var resolved = new Dictionary<string, IReadOnlyList<Placement>>(StringComparer.Ordinal);
-        var unusable = new List<string>();
 
         foreach (var name in names)
         {
-            if (!fields.TryGetValue(name, out var field))
+            var placements = new List<Placement>();
+
+            if (fields.TryGetValue(name, out var sharing))
             {
-                unusable.Add(name);
-                continue;
+                // Every field of this name contributes, so a value reaches all of them.
+                foreach (var field in sharing)
+                    placements.AddRange(PlacementsFor(field, widgetPages, form, formAppearance));
             }
 
-            var placements = PlacementsFor(field, widgetPages, form, formAppearance);
             if (placements.Count == 0)
             {
-                unusable.Add(name);
+                unmatched.Add(name);
                 continue;
             }
 
             resolved[name] = placements;
         }
 
-        if (unusable.Count > 0)
+        if (unmatched.Count > 0 && _options.OnMissingField == MissingFieldBehaviour.Throw)
         {
             throw new TemplateRenderException(
-                $"The template has no usable field named: {string.Join(", ", unusable.Order(StringComparer.Ordinal))}.");
+                $"The template has no usable field named: {string.Join(", ", unmatched.Order(StringComparer.Ordinal))}. "
+                + "Set RenderingOptions.OnMissingField to Ignore to draw what does match instead.");
         }
 
         return resolved;
@@ -184,6 +190,7 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
         string? formAppearance)
     {
         var (family, fontSize) = ReadAppearance(field, form, formAppearance);
+        var multiline = (field.Flags & PdfAcroFieldFlags.Multiline) != 0;
         var alignment = field.Elements.GetInteger("/Q") switch
         {
             1 => XStringAlignment.Center,
@@ -219,7 +226,7 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
             if (bounds.Width <= 0 || bounds.Height <= 0)
                 return;
 
-            placements.Add(new Placement(page, bounds, family, fontSize, alignment));
+            placements.Add(new Placement(page, bounds, family, fontSize, alignment, multiline));
         }
     }
 
@@ -236,28 +243,39 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
     private (string Family, double Size) ReadAppearance(
         PdfAcroField field, PdfAcroForm form, string? formAppearance)
     {
+        var (family, size) = ReadFieldAppearance(field, form, formAppearance);
+
+        return (family ?? _options.DefaultFontFamily, size ?? _options.DefaultFontSizePoints);
+    }
+
+    /// <summary>
+    /// Reads what a field asks for without substituting anything, so a caller inspecting a
+    /// template can tell "asks for nothing" apart from "asks for the default".
+    /// </summary>
+    internal static (string? Family, double? Size) ReadFieldAppearance(
+        PdfAcroField field, PdfAcroForm form, string? formAppearance)
+    {
         var appearance = field.Elements.GetString("/DA");
         if (string.IsNullOrWhiteSpace(appearance))
             appearance = formAppearance;
 
         if (string.IsNullOrWhiteSpace(appearance))
-            return (_options.DefaultFontFamily, _options.DefaultFontSizePoints);
+            return (null, null);
 
         var tokens = appearance.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         var operatorIndex = Array.IndexOf(tokens, "Tf");
         if (operatorIndex < 1)
-            return (_options.DefaultFontFamily, _options.DefaultFontSizePoints);
+            return (null, null);
 
         var parsed = double.TryParse(
             tokens[operatorIndex - 1], NumberStyles.Float, CultureInfo.InvariantCulture, out var size);
 
         // A size of zero means auto-size, which shrink-to-fit already covers.
-        var resolvedSize = parsed && size > 0 ? size : _options.DefaultFontSizePoints;
+        double? resolvedSize = parsed && size > 0 ? size : null;
 
         var resource = operatorIndex >= 2 ? tokens[operatorIndex - 2] : null;
-        var family = ResolveFamily(resource, field, form) ?? _options.DefaultFontFamily;
 
-        return (family, resolvedSize);
+        return (ResolveFamily(resource, field, form), resolvedSize);
     }
 
     /// <summary>
@@ -332,7 +350,7 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
     /// Converts a PDF rectangle, whose origin is the bottom-left of the page, into the top-left
     /// origin an <see cref="XGraphics"/> canvas draws in.
     /// </summary>
-    private static XRect ToCanvasRect(PdfRectangle rect, PdfPage page)
+    internal static XRect ToCanvasRect(PdfRectangle rect, PdfPage page)
     {
         var left = Math.Min(rect.X1, rect.X2);
         var right = Math.Max(rect.X1, rect.X2);
@@ -342,35 +360,129 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
         return new XRect(left, page.Height.Point - top, right - left, top - bottom);
     }
 
-    private void DrawText(XGraphics canvas, Placement placement, string value)
+    private void DrawText(XGraphics canvas, Placement placement, TextContent content)
     {
+        var value = content.Value;
         if (value.Length == 0)
             return;
 
-        var font = FitToWidth(canvas, value, placement);
-        var format = new XStringFormat { Alignment = placement.Alignment, LineAlignment = XLineAlignment.Center };
+        var overrides = content.Options;
+        var family = overrides?.FontFamily ?? placement.FontFamily;
+        var size = overrides?.FontSizePoints ?? placement.FontSize;
+        var alignment = overrides?.Alignment is { } requested ? Convert(requested) : placement.Alignment;
+
+        // A value spanning lines has to wrap whatever the field says, or the extra lines are lost.
+        var multiline = overrides?.Multiline ?? (placement.IsMultiline || value.Contains('\n'));
+
+        if (multiline)
+        {
+            DrawWrapped(canvas, placement, value, family, size, alignment);
+            return;
+        }
+
+        var font = FitToWidth(canvas, value, family, size, placement.Bounds.Width);
+        var format = new XStringFormat { Alignment = alignment, LineAlignment = XLineAlignment.Center };
 
         canvas.DrawString(value, font, XBrushes.Black, placement.Bounds, format);
+    }
+
+    private static XStringAlignment Convert(TextAlignment alignment) => alignment switch
+    {
+        TextAlignment.Centre => XStringAlignment.Center,
+        TextAlignment.Right => XStringAlignment.Far,
+        _ => XStringAlignment.Near
+    };
+
+    /// <summary>
+    /// Draws a value across as many lines as it needs, shrinking until the whole block fits the
+    /// field rather than only its widest line.
+    /// </summary>
+    private void DrawWrapped(
+        XGraphics canvas, Placement placement, string value, string family, double size, XStringAlignment alignment)
+    {
+        var bounds = placement.Bounds;
+        var font = CreateFont(family, size);
+        var lines = Wrap(canvas, value, font, bounds.Width);
+
+        // Shrink on height as well as width: wrapping trades one for the other, so a block can fit
+        // every line individually and still overflow the bottom of the field.
+        while (size > _options.MinimumFontSizePoints
+               && lines.Count * font.GetHeight() > bounds.Height)
+        {
+            size -= 0.5;
+            font = CreateFont(family, size);
+            lines = Wrap(canvas, value, font, bounds.Width);
+        }
+
+        var lineHeight = font.GetHeight();
+        var block = Math.Min(lines.Count * lineHeight, bounds.Height);
+        var y = bounds.Y + ((bounds.Height - block) / 2);
+
+        var format = new XStringFormat { Alignment = alignment, LineAlignment = XLineAlignment.Near };
+
+        foreach (var line in lines)
+        {
+            // Stop at the bottom edge rather than drawing outside the field.
+            if (y + lineHeight > bounds.Y + bounds.Height + 0.01)
+                break;
+
+            canvas.DrawString(line, font, XBrushes.Black, new XRect(bounds.X, y, bounds.Width, lineHeight), format);
+            y += lineHeight;
+        }
+    }
+
+    /// <summary>Breaks a value into lines that fit a width, honouring the line breaks it already has.</summary>
+    private static List<string> Wrap(XGraphics canvas, string value, XFont font, double width)
+    {
+        var lines = new List<string>();
+
+        foreach (var paragraph in value.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n'))
+        {
+            if (paragraph.Length == 0)
+            {
+                lines.Add(string.Empty);
+                continue;
+            }
+
+            var line = new StringBuilder();
+
+            foreach (var word in paragraph.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var candidate = line.Length == 0 ? word : $"{line} {word}";
+
+                if (line.Length > 0 && canvas.MeasureString(candidate, font).Width > width)
+                {
+                    lines.Add(line.ToString());
+                    line.Clear().Append(word);
+                }
+                else
+                {
+                    line.Clear().Append(candidate);
+                }
+            }
+
+            lines.Add(line.ToString());
+        }
+
+        return lines;
     }
 
     /// <summary>
     /// Shrinks the font until the value fits the field width, down to the configured floor. A
     /// label that silently clips a part number is worse than one set slightly smaller.
     /// </summary>
-    private XFont FitToWidth(XGraphics canvas, string value, Placement placement)
+    private XFont FitToWidth(XGraphics canvas, string value, string family, double size, double width)
     {
-        var size = placement.FontSize;
-
         while (size > _options.MinimumFontSizePoints)
         {
-            var candidate = CreateFont(placement.FontFamily, size);
-            if (canvas.MeasureString(value, candidate).Width <= placement.Bounds.Width)
+            var candidate = CreateFont(family, size);
+            if (canvas.MeasureString(value, candidate).Width <= width)
                 return candidate;
 
             size -= 0.5;
         }
 
-        return CreateFont(placement.FontFamily, _options.MinimumFontSizePoints);
+        return CreateFont(family, _options.MinimumFontSizePoints);
     }
 
     private void DrawImage(XGraphics canvas, Placement placement, byte[] value, string fieldName)
@@ -489,9 +601,19 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
         }
     }
 
-    private static Dictionary<string, PdfAcroField> FlattenFields(PdfAcroForm form)
+    /// <summary>
+    /// Collects every field by name. A name maps to a list, not a single field, because a template
+    /// may define the same name more than once and a value is meant to reach all of them.
+    /// </summary>
+    /// <remarks>
+    /// Usually repetition is one field with several widget annotations, which is the ordinary way
+    /// a form shows a value in more than one place. But some authoring tools emit genuinely
+    /// separate field objects sharing a name, and keeping only one of those would silently drop a
+    /// placement — the value would be drawn in one spot and quietly missing from another.
+    /// </remarks>
+    private static Dictionary<string, List<PdfAcroField>> FlattenFields(PdfAcroForm form)
     {
-        var map = new Dictionary<string, PdfAcroField>(StringComparer.Ordinal);
+        var map = new Dictionary<string, List<PdfAcroField>>(StringComparer.Ordinal);
         Walk(form.Fields, prefix: "");
         return map;
 
@@ -500,11 +622,18 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
             for (var i = 0; i < fields.Count; i++)
             {
                 var field = fields[i];
-                if (field is null)
+
+                // A kid with no name of its own is a widget annotation rather than a child
+                // field; its placement belongs to the parent.
+                if (field is null || string.IsNullOrEmpty(field.Name))
                     continue;
 
                 var name = prefix.Length == 0 ? field.Name : $"{prefix}.{field.Name}";
-                map[name] = field;
+
+                if (!map.TryGetValue(name, out var sharing))
+                    map[name] = sharing = [];
+
+                sharing.Add(field);
 
                 // Kids are either child fields, which are named, or bare widget annotations,
                 // which are not and are handled as placements of this field.

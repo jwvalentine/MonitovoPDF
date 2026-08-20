@@ -37,6 +37,53 @@ internal static class SyntheticTemplate
     public static byte[] WithFields(params Field[] fields) =>
         Assemble(Bodies(fields, "/Helv", extraFormEntries: ""));
 
+    /// <summary>
+    /// Produces a template where one field is shown in several places, as a form does when the
+    /// same value belongs in more than one spot: a single field with several widget annotations.
+    /// </summary>
+    public static byte[] WithSharedField(
+        string name, params (int Left, int Bottom, int Right, int Top)[] rectangles)
+    {
+        const int fieldNumber = FirstFieldNumber;
+        var firstWidget = fieldNumber + 1;
+
+        var widgetReferences = string.Join(
+            " ", rectangles.Select((_, index) => $"{firstWidget + index} 0 R"));
+
+        var bodies = new List<string>
+        {
+            $"<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [{fieldNumber} 0 R] /DA (/Helv 9 Tf 0 g) >> >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] "
+                + $"/Resources << /Font << >> >> /Annots [{widgetReferences}] >>",
+            $"<< /FT /Tx /T ({name}) /DA (/Helv 9 Tf 0 g) /Kids [{widgetReferences}] >>",
+        };
+
+        bodies.AddRange(rectangles.Select(rectangle =>
+            $"<< /Type /Annot /Subtype /Widget /Parent {fieldNumber} 0 R "
+            + $"/Rect [{rectangle.Left} {rectangle.Bottom} {rectangle.Right} {rectangle.Top}] /F 4 >>"));
+
+        return Assemble(bodies);
+    }
+
+    /// <summary>Produces a template with one field carrying the multiline flag.</summary>
+    public static byte[] WithMultilineField(Field field)
+    {
+        var bodies = new List<string>
+        {
+            $"<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [{FirstFieldNumber} 0 R] /DA (/Helv 9 Tf 0 g) >> >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] "
+                + $"/Resources << /Font << >> >> /Annots [{FirstFieldNumber} 0 R] >>",
+            // Bit 13 of the field flags marks a text field as holding more than one line.
+            "<< /Type /Annot /Subtype /Widget /FT /Tx /Ff 4096 "
+                + $"/T ({field.Name}) /Rect [{field.Left} {field.Bottom} {field.Right} {field.Top}] "
+                + "/DA (/Helv 9 Tf 0 g) /F 4 >>",
+        };
+
+        return Assemble(bodies);
+    }
+
     /// <summary>Objects 1-3 are the catalog, page tree and page; the fields follow.</summary>
     private const int FirstFieldNumber = 4;
 

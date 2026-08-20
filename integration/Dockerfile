@@ -16,9 +16,10 @@ RUN apt-get update \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# zxing-cpp reads the 2D symbologies zbar cannot. It is a separate C++ implementation, so it
-# is not simply the encoder checking its own work.
-RUN pip3 install --quiet --break-system-packages --no-cache-dir zxing-cpp pillow
+# zxing-cpp reads the 2D symbologies zbar cannot. pypdfium2 is PDFium, a different renderer from
+# poppler: a document that rasterises correctly under one and not the other is a real defect, and
+# PDFium is what many print paths use.
+RUN pip3 install --quiet --break-system-packages --no-cache-dir zxing-cpp pillow pypdfium2
 
 # LibreOffice needs a writable home for its user profile.
 ENV HOME=/tmp

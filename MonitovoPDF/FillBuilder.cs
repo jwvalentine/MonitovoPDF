@@ -12,11 +12,11 @@ namespace MonitovoPDF;
 /// </remarks>
 public sealed class FillBuilder
 {
-    private readonly Dictionary<string, string> _text = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, TextContent> _text = new(StringComparer.Ordinal);
     private readonly Dictionary<string, byte[]> _images = new(StringComparer.Ordinal);
     private readonly Dictionary<string, BarcodeContent> _barcodes = new(StringComparer.Ordinal);
 
-    internal IReadOnlyDictionary<string, string> Text => _text;
+    internal IReadOnlyDictionary<string, TextContent> Text => _text;
 
     internal IReadOnlyDictionary<string, byte[]> Images => _images;
 
@@ -25,11 +25,18 @@ public sealed class FillBuilder
     internal int Count => _text.Count + _images.Count + _barcodes.Count;
 
     /// <summary>Draws <paramref name="value"/> into the field called <paramref name="field"/>.</summary>
+    /// <remarks>
+    /// The value is drawn as the template field specifies unless <paramref name="options"/> says
+    /// otherwise. A field that appears more than once in the template is drawn in every place it
+    /// appears.
+    /// </remarks>
     /// <exception cref="ArgumentException">The field name is empty, or already has a value.</exception>
-    public FillBuilder SetText(string field, string value)
+    public FillBuilder SetText(string field, string value, TextOptions? options = null)
     {
         Claim(field);
-        _text[field] = value ?? throw new ArgumentNullException(nameof(value));
+        ArgumentNullException.ThrowIfNull(value);
+
+        _text[field] = new TextContent(value, options);
         return this;
     }
 

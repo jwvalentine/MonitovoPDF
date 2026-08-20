@@ -30,6 +30,9 @@ public sealed class RenderingOptions : IValidatableObject
     [Range(1, 100_000)]
     public int MaxTextLength { get; set; } = 4096;
 
+    /// <summary>What to do when a value is set on a field the template does not define.</summary>
+    public MissingFieldBehaviour OnMissingField { get; set; } = MissingFieldBehaviour.Throw;
+
     /// <summary>Templates with more pages than this are rejected.</summary>
     [Range(1, 1000)]
     public int MaxPages { get; set; } = 10;

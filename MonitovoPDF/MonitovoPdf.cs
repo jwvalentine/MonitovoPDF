@@ -45,6 +45,16 @@ public static class MonitovoPdf
     /// </exception>
     public static byte[] Fill(byte[] template, Action<FillBuilder> fill, RenderingOptions? options = null)
     {
+        var (builder, resolved) = Prepare(template, fill, options);
+
+        return new LabelRenderer(resolved)
+            .Render(template, builder.Text, builder.Images, builder.Barcodes).Pdf;
+    }
+
+    /// <summary>Validates the inputs against the ceilings and makes sure text can be drawn.</summary>
+    private static (FillBuilder Builder, RenderingOptions Options) Prepare(
+        byte[] template, Action<FillBuilder> fill, RenderingOptions? options)
+    {
         ArgumentNullException.ThrowIfNull(template);
         ArgumentNullException.ThrowIfNull(fill);
 
@@ -67,7 +77,7 @@ public static class MonitovoPdf
 
         foreach (var (field, value) in builder.Text)
         {
-            if (value.Length > options.MaxTextLength)
+            if (value.Value.Length > options.MaxTextLength)
             {
                 throw new TemplateRenderException(
                     $"The value for field '{field}' exceeds the {options.MaxTextLength} character limit.");
@@ -77,7 +87,67 @@ public static class MonitovoPdf
         if (builder.Text.Count > 0)
             EnsureFontsAvailable(options);
 
-        return new LabelRenderer(options).Render(template, builder.Text, builder.Images, builder.Barcodes);
+        return (builder, options);
+    }
+
+    /// <summary>
+    /// Fills a template and reports any names that did not match a field.
+    /// </summary>
+    /// <remarks>
+    /// The same work as <see cref="Fill(byte[], Action{FillBuilder}, RenderingOptions?)"/>, but
+    /// the result also says what was left undrawn. That list is only ever non-empty when
+    /// <see cref="RenderingOptions.OnMissingField"/> is <see cref="MissingFieldBehaviour.Ignore"/>,
+    /// since otherwise a name the template does not define fails the render.
+    /// </remarks>
+    public static FillResult FillWithReport(
+        byte[] template, Action<FillBuilder> fill, RenderingOptions? options = null)
+    {
+        var (builder, resolved) = Prepare(template, fill, options);
+        var (pdf, unmatched) = new LabelRenderer(resolved)
+            .Render(template, builder.Text, builder.Images, builder.Barcodes);
+
+        return new FillResult(pdf, unmatched);
+    }
+
+    /// <summary>
+    /// Reads a template's pages and fields without filling anything.
+    /// </summary>
+    /// <remarks>
+    /// Useful before a fill, and useful on its own. It answers whether a template is the page size
+    /// expected, what its fields are actually called, and how each asks to be drawn — questions
+    /// that otherwise only surface as a failed render or a document that comes out looking wrong.
+    /// </remarks>
+    /// <exception cref="TemplateRenderException">The template is unreadable or too long.</exception>
+    public static TemplateInfo Inspect(byte[] template, RenderingOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(template);
+
+        options ??= new RenderingOptions();
+
+        // Reading a text field builds a font inside the PDF engine, so even inspection — which
+        // draws nothing — fails on a host with no fonts unless this runs first.
+        EnsureFontsAvailable(options);
+
+        return TemplateInspector.Inspect(template, options);
+    }
+
+    /// <summary>Reads a template from a stream.</summary>
+    public static TemplateInfo Inspect(Stream template, RenderingOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(template);
+
+        using var buffer = new MemoryStream();
+        template.CopyTo(buffer);
+
+        return Inspect(buffer.ToArray(), options);
+    }
+
+    /// <summary>Reads a template from disk.</summary>
+    public static TemplateInfo InspectFile(string templatePath, RenderingOptions? options = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(templatePath);
+
+        return Inspect(File.ReadAllBytes(templatePath), options);
     }
 
     /// <summary>Fills a template read from a stream.</summary>

@@ -1,0 +1,78 @@
+namespace MonitovoPDF;
+
+/// <summary>What a template looks like: its pages and the fields it defines.</summary>
+/// <remarks>
+/// Returned by <see cref="MonitovoPdf.Inspect(byte[], RenderingOptions?)"/>. Reading a template before filling it
+/// answers the questions that otherwise only surface as a failed render: whether the page is the
+/// size expected, and what a field is actually called.
+/// </remarks>
+public sealed record TemplateInfo(
+    IReadOnlyList<TemplatePage> Pages,
+    IReadOnlyList<TemplateField> Fields)
+{
+    /// <summary>Finds a field by name, or null when the template has no such field.</summary>
+    public TemplateField? Field(string name) =>
+        Fields.FirstOrDefault(candidate => string.Equals(candidate.Name, name, StringComparison.Ordinal));
+
+    /// <summary>Every field name, in the order the template defines them.</summary>
+    public IReadOnlyList<string> FieldNames => [.. Fields.Select(candidate => candidate.Name)];
+}
+
+/// <summary>One page of a template.</summary>
+/// <param name="Number">One-based page number.</param>
+/// <param name="WidthPoints">Page width in points, 72 to the inch.</param>
+/// <param name="HeightPoints">Page height in points.</param>
+/// <param name="Rotation">Degrees the page is rotated for display: 0, 90, 180 or 270.</param>
+public sealed record TemplatePage(int Number, double WidthPoints, double HeightPoints, int Rotation)
+{
+    /// <summary>Page width in millimetres, for comparing against a physical size.</summary>
+    public double WidthMillimetres => WidthPoints * 25.4 / 72;
+
+    /// <summary>Page height in millimetres.</summary>
+    public double HeightMillimetres => HeightPoints * 25.4 / 72;
+}
+
+/// <summary>What a template field is called, where it sits, and how it asks to be drawn.</summary>
+/// <param name="Name">The name a value is keyed by when filling.</param>
+/// <param name="Kind">The field type the template declares.</param>
+/// <param name="Placements">Where the field appears. A field may have more than one placement.</param>
+/// <param name="FontFamily">Family the field asks for, or null when it names none.</param>
+/// <param name="FontSizePoints">Size the field asks for; zero means auto-size.</param>
+/// <param name="Alignment">Horizontal placement the field asks for.</param>
+/// <param name="IsMultiline">Whether the field is flagged to hold more than one line.</param>
+public sealed record TemplateField(
+    string Name,
+    TemplateFieldKind Kind,
+    IReadOnlyList<FieldPlacement> Placements,
+    string? FontFamily,
+    double FontSizePoints,
+    TextAlignment Alignment,
+    bool IsMultiline);
+
+/// <summary>Where one occurrence of a field sits on a page.</summary>
+/// <param name="PageNumber">One-based page number.</param>
+/// <param name="XPoints">Distance from the left edge of the page, in points.</param>
+/// <param name="YPoints">Distance from the top edge of the page, in points.</param>
+/// <param name="WidthPoints">Width in points.</param>
+/// <param name="HeightPoints">Height in points.</param>
+public sealed record FieldPlacement(
+    int PageNumber, double XPoints, double YPoints, double WidthPoints, double HeightPoints);
+
+/// <summary>The field types a template may declare.</summary>
+public enum TemplateFieldKind
+{
+    /// <summary>The template declares no type, or one that is not recognised.</summary>
+    Unknown,
+
+    /// <summary>A text field.</summary>
+    Text,
+
+    /// <summary>A button, including check boxes and radio buttons.</summary>
+    Button,
+
+    /// <summary>A list or combo box.</summary>
+    Choice,
+
+    /// <summary>A signature field.</summary>
+    Signature,
+}

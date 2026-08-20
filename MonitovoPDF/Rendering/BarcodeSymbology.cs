@@ -58,3 +58,6 @@ internal sealed record BarcodeSymbology(
 
 /// <summary>A barcode to draw into a named template field.</summary>
 internal sealed record BarcodeContent(BarcodeSymbology Symbology, string Value);
+
+/// <summary>Text to draw into a field, with any caller overrides for how it should look.</summary>
+internal sealed record TextContent(string Value, TextOptions? Options);

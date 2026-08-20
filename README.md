@@ -56,6 +56,52 @@ Every named field must exist in the template. If one does not, the whole call th
 returning a partly populated document, and the message names the fields at fault. A field given
 more than one value is refused for the same reason.
 
+**A field that appears more than once is filled everywhere it appears.** That covers both shapes a
+template can take: one field shown in several places, and separate fields sharing a name.
+
+When one set of values feeds templates that do not all carry every field, that strictness gets in
+the way. `OnMissingField` relaxes it, and `FillWithReport` tells you what did not land:
+
+```csharp
+var result = MonitovoPdf.FillWithReport(template, fill =>
+{
+    fill.SetText("part_number", "WIDGET-4471");
+    fill.SetText("only_on_some_templates", "…");
+}, new RenderingOptions { OnMissingField = MissingFieldBehaviour.Ignore });
+
+// result.Pdf, and result.UnmatchedFields naming anything the template did not define.
+```
+
+Ignoring silently would turn the wrong template into a plausible-looking wrong document, so the
+names that did not match always come back rather than being swallowed.
+
+### Reading a template
+
+`Inspect` reports a template's pages and fields without filling anything — the page size, what
+each field is called, where it sits, and how it asks to be drawn:
+
+```csharp
+var info = MonitovoPdf.Inspect(templateBytes);
+
+foreach (var field in info.Fields)
+    Console.WriteLine($"{field.Name} {field.Kind} {field.FontFamily} {field.FontSizePoints}pt");
+
+var page = info.Pages[0];
+if (Math.Abs(page.WidthMillimetres - 100) > 0.5)
+    throw new InvalidOperationException("This template is not the size we print.");
+```
+
+That is the answer to "why did nothing appear?" — usually a field named something other than what
+was assumed — and it is how to reject a template that is the wrong size up front rather than
+stretching it to fit.
+
+### Text across several lines
+
+A value containing line breaks is drawn as several lines, and a field the template flags as
+multiline wraps on word boundaries. `TextOptions.Multiline` decides explicitly when neither
+applies. Wrapped text shrinks to fit the field's height as well as its width, and stops at the
+bottom edge rather than drawing outside the field.
+
 ```csharp
 try
 {
@@ -88,11 +134,22 @@ Pass an instance to any call to change them.
 | `DefaultFontSizePoints` | 10 | Size used when a field does not specify one. |
 | `MinimumFontSizePoints` | 5 | Floor that shrink-to-fit will not go below. |
 
-Text is drawn in **the font and size the field's default-appearance string asks for**. A form laid
-out for Helvetica and drawn in something wider would wrap or shrink where the designer expected it
-to fit, so the template's intent wins over `DefaultFontFamily`. That default applies only when the
-template names no font, or names one the host does not have — a missing font substitutes rather
-than failing the render.
+Text is drawn in **the font, size and alignment the field's default-appearance string asks for**. A
+form laid out for Helvetica and drawn in something wider would wrap or shrink where the designer
+expected it to fit, so the template's intent wins over `DefaultFontFamily`. That default applies
+only when the template names no font, or names one the host does not have — a missing font
+substitutes rather than failing the render.
+
+When a value's appearance genuinely belongs to the caller rather than the document, `TextOptions`
+overrides any of it for one field:
+
+```csharp
+fill.SetText("part_number", "WIDGET-4471",
+    new TextOptions { FontSizePoints = 18, Alignment = TextAlignment.Centre });
+```
+
+Prefer changing the template where you can. Appearance living in the template is what lets whoever
+designs it control how the document looks without a code change.
 
 The base-14 PDF fonts map to what a host is likely to actually have: Helvetica to Arial, Times to
 Times New Roman, Courier to Courier New. Those are defined to be substituted rather than embedded,
@@ -163,9 +220,15 @@ included in the symbol, so a template author does not have to leave room for it.
 | `Aztec` | Aztec | any text |
 | `Pdf417` | PDF417 | any text |
 
-**No check digit is calculated.** A value is encoded exactly as given, so a caller using a
-symbology that carries one — the retail codes, or ITF-14 — must supply a correct digit, or the
-result is a barcode that scans cleanly and carries the wrong number.
+**Symbology check characters are calculated; data check digits are not.** Code 128, Code 93 and
+the like carry an internal check character that is part of the encoding, and it is generated for
+you — nothing to do. What is *not* calculated is a check digit belonging to the **data**: the last
+digit of an EAN, UPC or GS1 number, or of an ITF-14. Supply those yourself, or the result is a
+barcode that scans cleanly and carries the wrong number.
+
+Quiet zones are included in the symbol rather than assumed around it, so a barcode drawn into a
+small field gets narrower modules instead of a clipped margin. Whether those modules survive a
+particular printer's resolution is a question for a physical scan, not for this library.
 
 Every symbology except MSI and Plessey is verified end to end: rendered, rasterised, and read back
 by an independent decoder that must agree on both the symbology and the value. MSI and Plessey
