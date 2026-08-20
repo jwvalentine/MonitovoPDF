@@ -166,5 +166,11 @@ approach can be discussed before you spend time on it.
 
 ## License
 
-Released under the [MIT License](LICENSE). It depends on
+Released under the [MIT License](LICENSE). The only runtime dependency is
 [PDFsharp](https://github.com/empira/PDFsharp), which is also MIT licensed.
+
+Third-party works redistributed with the service, and their licences in full, are listed in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). That file is copied into the container image,
+because several of those licences require the notice to travel with the copies. The test harness
+in `integration/` contains copyleft software (poppler is GPL); it is a local tool, is not linked
+into the service and is not published — the notices file explains the distinction.

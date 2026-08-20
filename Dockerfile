@@ -22,6 +22,10 @@ RUN apt-get update \
 WORKDIR /app
 COPY --from=build /app ./
 
+# Ship the licence notices with the binaries. PDFsharp's MIT terms and the fonts'
+# Bitstream Vera terms both require their notice to accompany the copies.
+COPY LICENSE THIRD-PARTY-NOTICES.md ./
+
 # DejaVu ships DejaVuSans.ttf and DejaVuSans-Bold.ttf, which match the face-name
 # convention the font resolver expects.
 ENV ASPNETCORE_URLS=http://+:8080 \
