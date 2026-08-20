@@ -11,7 +11,8 @@ with the copies.
 
 ## Redistributed at runtime
 
-These are shipped in the published artefacts and are part of what a consumer receives.
+These are shipped in the NuGet package and the container image, and are part of what a consumer
+receives.
 
 ### PDFsharp 6.2.4 — MIT License
 

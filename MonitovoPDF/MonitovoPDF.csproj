@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackageId>MonitovoPDF</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>Monitovo LLC</Authors>
+    <Company>Monitovo LLC</Company>
+    <Copyright>Copyright (c) 2026 Monitovo LLC</Copyright>
+    <Description>
+      Fills template PDFs with text, images and barcodes, in process. Placeholders are ordinary
+      AcroForm fields; values are drawn into the page content and the form is stripped, so the
+      output is flat and renders identically in every viewer. No per-document licensing.
+    </Description>
+    <PackageTags>pdf;template;acroform;barcode;label;printing;code128;qr</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/jwvalentine/MonitovoPDF</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/jwvalentine/MonitovoPDF</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="PDFsharp" Version="6.2.4" />
+    <PackageReference Include="ZXing.Net" Version="0.16.11" />
+  </ItemGroup>
+
+  <!--
+    ZXing.Net is Apache-2.0, which requires its licence to accompany the copies. A NuGet package
+    is a distribution, so the notices travel inside it as well as inside the container image.
+  -->
+  <ItemGroup>
+    <None Include="../README.md" Pack="true" PackagePath="/" />
+    <None Include="../THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="/" />
+    <None Include="../licenses/Apache-2.0.txt" Pack="true" PackagePath="licenses/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="MonitovoPDF.Tests" />
+  </ItemGroup>
+
+</Project>

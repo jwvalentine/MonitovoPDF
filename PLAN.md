@@ -69,21 +69,25 @@ through a static API key to full OIDC. Whatever is chosen must be **optional and
 configuration-driven**, because self-hosters' deployment models differ. Nothing in the current
 build authenticates anything.
 
-## Decision 4 — Project layout — **PARTLY DECIDED**
+## Decision 4 — Project layout — **DECIDED: three sibling projects**
 
-The application project stays at the repository root and a sibling `MonitovoPDF.Tests` project
-holds the tests, with a solution file tying them together. The test framework is **xUnit**.
+`MonitovoPDF` is the library and the product. `MonitovoPDF.Server` is an optional ASP.NET Core
+host that references it. `MonitovoPDF.Tests` covers both. All three are sibling directories at
+the repository root, tied together by a solution file. The test framework is **xUnit**.
 
-This leaves one wart: the test project sits inside the application project's directory, so the
-application's `.csproj` has to exclude it from its source globs explicitly. Moving to a
-`src/` + `tests/` layout would remove that, and is worth revisiting before the repository grows.
+This replaced a flat layout in which the application project sat at the root and the test project
+inside its directory, which forced explicit source-glob exclusions. Splitting the library out
+removed that wart as a side effect.
 
-## Decision 5 — Distribution — **PARTLY DECIDED**
+## Decision 5 — Distribution — **DECIDED: a NuGet package, with a container for the host**
 
-A `Dockerfile` now builds a runnable image, so a container is the working answer for deployment.
-What is still undecided is *publishing*: whether the project pushes a tagged image to a registry,
-and whether it also offers a NuGet package or a release binary. That decision needs a versioning
-policy and a release workflow to go with it.
+The library is the product and ships as a NuGet package targeting `net8.0` and `net10.0`. The
+HTTP host ships as a container image for callers that want the capability over HTTP.
+
+What is still open is *publishing*: nothing is pushed to nuget.org or a registry yet, and that
+needs a versioning policy and a release workflow first. The package builds correctly today with
+`dotnet pack`, carries XML documentation for IntelliSense, and includes the third-party notices
+that ZXing.Net's Apache-2.0 terms require.
 
 ## Decision 6 — Fonts in a container — **DECIDED: ship DejaVu in the image**
 
@@ -126,6 +130,32 @@ than quietly presented as tested.
 
 The service does **not** compute check digits. A value is encoded as given, so GS1 and ITF-14
 callers must supply a correct one. Worth revisiting if it trips people up.
+
+## Decision 8 — The library is the product — **DECIDED**
+
+MonitovoPDF is a **library first**. It exists to replace the commercial PDF components that run
+inside an application at runtime — Aspose.PDF, IronPDF and similar — for the narrow job of
+populating a template. The HTTP service is now an optional host on top, not the deliverable.
+
+That reframing drove several things:
+
+* **The public surface is `MonitovoPdf`**, a static entry point taking a callback that sets
+  values. `LabelRenderer` and the symbology table are internal; consumers see one way in.
+* **No `Microsoft.Extensions` dependency.** The library takes no `IOptions` and no `ILogger`:
+  options are a plain object, and everything a caller needs to know arrives as an exception or,
+  for the font resolver, an optional callback. A library that forces a DI container on its
+  consumer is a worse library, and this also keeps the dependency count at two.
+* **`net8.0` and `net10.0`.** Targeting only the newest runtime would exclude most of the
+  applications that currently pay for Aspose. Both dependencies also support `netstandard2.0`, so
+  reaching .NET Framework later is possible if anyone asks; it would need polyfills for the .NET 7+
+  APIs the code uses.
+* **Exceptions carry their cause.** `TemplateRenderException` keeps the underlying failure as
+  `InnerException`, because an in-process caller has no log to consult.
+
+The one sharp edge is fonts. PDFsharp resolves them through a single process-wide hook, so a
+resolver this library installs affects everything else in the process that uses PDFsharp. There is
+no way around that from inside a library, so `UseFontDirectory` refuses to displace a resolver it
+did not install unless told to force it, and the behaviour is documented rather than hidden.
 
 ---
 

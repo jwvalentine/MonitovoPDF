@@ -1,14 +1,20 @@
-# Runtime image for the service. Fonts matter here: PDFsharp's cross-platform build
-# loads none on its own and a slim container ships none, so text would silently fail
-# to draw without them.
+# Runtime image for the HTTP host. The library itself ships as a NuGet package and needs none
+# of this; the host exists for callers that want the capability over HTTP rather than in process.
+#
+# Fonts matter here: PDFsharp's cross-platform build loads none on its own and a slim container
+# ships none, so text would silently fail to draw without them.
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 
 WORKDIR /src
-COPY MonitovoPDF.csproj ./
-RUN dotnet restore
 
-COPY . ./
-RUN dotnet publish MonitovoPDF.csproj -c Release -o /app --no-restore
+# Restore against the project files alone, so the layer caches until dependencies change.
+COPY MonitovoPDF/MonitovoPDF.csproj MonitovoPDF/
+COPY MonitovoPDF.Server/MonitovoPDF.Server.csproj MonitovoPDF.Server/
+RUN dotnet restore MonitovoPDF.Server/MonitovoPDF.Server.csproj
+
+COPY MonitovoPDF/ MonitovoPDF/
+COPY MonitovoPDF.Server/ MonitovoPDF.Server/
+RUN dotnet publish MonitovoPDF.Server/MonitovoPDF.Server.csproj -c Release -o /app --no-restore
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 
@@ -22,8 +28,8 @@ RUN apt-get update \
 WORKDIR /app
 COPY --from=build /app ./
 
-# Ship the licence notices with the binaries. PDFsharp's MIT terms and the fonts'
-# Bitstream Vera terms both require their notice to accompany the copies.
+# Ship the licence notices with the binaries. PDFsharp's MIT terms, ZXing.Net's Apache-2.0
+# terms and the fonts' Bitstream Vera terms all require their notice to accompany the copies.
 COPY LICENSE THIRD-PARTY-NOTICES.md ./
 COPY licenses/ ./licenses/
 
@@ -35,4 +41,4 @@ ENV ASPNETCORE_URLS=http://+:8080 \
 
 EXPOSE 8080
 USER $APP_UID
-ENTRYPOINT ["dotnet", "MonitovoPDF.dll"]
+ENTRYPOINT ["dotnet", "MonitovoPDF.Server.dll"]
