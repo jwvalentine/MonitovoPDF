@@ -169,7 +169,7 @@ def rasterise_with_pdfium(pdf_path, out_prefix, dpi=300):
     return sorted(written)
 
 
-def slot_template(width=200, height=200):
+def slot_template(width=200, height=200, transform="170 0 0 60 15 90"):
     """Builds a template whose placeholder is an image XObject rather than a form field.
 
     Templates authored for image-replacing tools are shaped this way: the page draws an image
@@ -180,8 +180,10 @@ def slot_template(width=200, height=200):
             "/BitsPerComponent 8 /Filter /ASCIIHexDecode /Length 25 >>\n" \
             "stream\nFF0000FF0000FF0000FF0000>\nendstream"
 
-    # A generous placeholder, so the barcode has room to keep its modules wide.
-    drawing = "q 170 0 0 60 15 90 cm /Im0 Do Q"
+    # A generous placeholder, so the barcode has room to keep its modules wide. The transform is
+    # what decides where the placeholder lands and which way up it is, so it is the interesting
+    # part: a template is free to stand a placeholder on its end, and many label templates do.
+    drawing = f"q {transform} cm /Im0 Do Q"
 
     objects = [
         "<< /Type /Catalog /Pages 2 0 R >>",

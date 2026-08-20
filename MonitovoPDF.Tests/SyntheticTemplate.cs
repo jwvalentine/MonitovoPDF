@@ -131,6 +131,32 @@ internal static class SyntheticTemplate
         return Assemble(bodies);
     }
 
+    /// <summary>
+    /// Produces a template with one image placeholder drawn under a transform given verbatim, so
+    /// a test can stand a placeholder on its side or stretch it well out of proportion.
+    /// </summary>
+    /// <param name="transform">The six numbers of a <c>cm</c> operator, as they appear in a stream.</param>
+    /// <param name="drawIt">
+    /// Whether the page draws the placeholder at all. A resource a page never draws is legal, and
+    /// is the case where a placeholder has no position to inherit.
+    /// </param>
+    public static byte[] WithTransformedImageSlot(string transform, bool drawIt = true)
+    {
+        var drawing = drawIt ? $"q {transform} cm /Im0 Do Q" : "q Q";
+
+        return Assemble(
+        [
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] "
+                + "/Resources << /XObject << /Im0 5 0 R >> >> /Contents 4 0 R >>",
+            $"<< /Length {drawing.Length} >>\nstream\n{drawing}\nendstream",
+            "<< /Type /XObject /Subtype /Image /Width 2 /Height 2 /ColorSpace /DeviceRGB "
+                + "/BitsPerComponent 8 /Filter /ASCIIHexDecode /Length 25 >>\n"
+                + "stream\nFF0000FF0000FF0000FF0000>\nendstream",
+        ]);
+    }
+
     /// <summary>Produces a template carrying both named form fields and image placeholders.</summary>
     public static byte[] WithFieldsAndImageSlots(Field[] fields, Slot[] slots)
     {

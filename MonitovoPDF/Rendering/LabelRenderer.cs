@@ -29,6 +29,20 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
         PdfPage Page, XRect Bounds, string FontFamily, double FontSize, XStringAlignment Alignment,
         bool IsMultiline);
 
+    /// <summary>A page's image placeholders, and where it draws them, as the template had them.</summary>
+    private sealed record SlotSnapshot(
+        List<ImageSlot> Slots, Dictionary<string, List<DrawnBox>> Drawn);
+
+    /// <summary>
+    /// How much of the space reserved for a readable barcode value the text itself fills.
+    /// </summary>
+    /// <remarks>
+    /// A font's em box stands taller than the digits drawn in it, so a caption sized to its whole
+    /// band would crowd the bars above it. Leaving a fifth of the band clear puts a visible gap
+    /// between the two, which is what stops a scanner reading the top of the text as a bar.
+    /// </remarks>
+    private const double CaptionFillRatio = 0.8;
+
     /// <summary>Families already found to be unavailable, so each is only attempted once.</summary>
     private readonly HashSet<string> _unavailableFamilies = new(StringComparer.OrdinalIgnoreCase);
 
@@ -113,6 +127,11 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
                 barcodePlacements = Resolve(barcodeValues.Keys, fields, widgetPages, form, formAppearance, unmatched);
             }
 
+            // Placeholders are found before anything is drawn. Drawing an image into a field adds
+            // an image to the page's resources, which would otherwise renumber the placeholders a
+            // caller addressed by position and silently fill the wrong one.
+            var slotPages = SnapshotSlots(document, slotValues);
+
             var canvases = new Dictionary<PdfPage, XGraphics>();
             try
             {
@@ -133,16 +152,17 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
                     foreach (var placement in placements)
                         DrawBarcode(CanvasFor(placement.Page), placement, barcodeValues[name], name);
                 }
+
+                // Placeholder replacement touches only the resource dictionary: the page's own
+                // instructions decide where the replacement lands. A readable barcode value is
+                // the exception, and is drawn onto the page inside the placeholder's own space.
+                ReplaceImageSlots(document, slotValues, slotPages, unmatchedImages, CanvasFor);
             }
             finally
             {
                 foreach (var canvas in canvases.Values)
                     canvas.Dispose();
             }
-
-            // Placeholder replacement happens after drawing, and touches only the resource
-            // dictionary: the page's own instructions decide where the replacement lands.
-            ReplaceImageSlots(document, slotValues, unmatchedImages);
 
             if (form is not null)
                 RemoveFormFields(document, form);
@@ -574,6 +594,18 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
         }
 
         var bounds = placement.Bounds;
+        var fraction = content.CaptionFraction(_options);
+
+        if (fraction > 0)
+        {
+            // The readable value is drawn inside the space the field gave the barcode rather than
+            // beside it, so the bars give up the height it takes.
+            var band = bounds.Height * fraction;
+            bounds = new XRect(bounds.X, bounds.Y, bounds.Width, bounds.Height - band);
+
+            DrawCaption(
+                canvas, new XRect(bounds.X, bounds.Y + bounds.Height, bounds.Width, band), content);
+        }
 
         if (matrix.Height == 1)
         {
@@ -601,6 +633,37 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
                     length * module, module * 1.02);
             }
         }
+    }
+
+    /// <summary>
+    /// Draws a barcode's value as readable text, centred in the space set aside for it.
+    /// </summary>
+    /// <remarks>
+    /// The text is the value as it was supplied, not as the symbology encoded it. Where a check
+    /// character was added during encoding it is therefore not shown, which is deliberate: the
+    /// number a person reads off the label is the number they were given to look up, and printing
+    /// a longer one underneath would send them looking for something that does not exist.
+    /// </remarks>
+    private void DrawCaption(XGraphics canvas, XRect band, BarcodeContent content)
+    {
+        var options = content.Options!;
+        var family = options.CaptionFontFamily ?? _options.DefaultFontFamily;
+
+        // Sizing from the band rather than from a fixed number keeps the text in proportion with
+        // the barcode, so the same call works for a wristband and for a pallet label.
+        var size = options.CaptionFontSizePoints ?? (band.Height * CaptionFillRatio);
+        var font = CreateFont(family, size);
+
+        // A caption wider than the bars it belongs to is worse than a small one, so it shrinks
+        // until it fits. The floor is the band itself, which has already had its say on the size.
+        while (size > _options.MinimumFontSizePoints && canvas.MeasureString(content.Value, font).Width > band.Width)
+        {
+            size -= 0.5;
+            font = CreateFont(family, size);
+        }
+
+        canvas.DrawString(content.Value, font, XBrushes.Black, band,
+            new XStringFormat { Alignment = XStringAlignment.Center, LineAlignment = XLineAlignment.Center });
     }
 
     /// <summary>Yields the runs of set modules in one row, as (start, length) pairs.</summary>
@@ -717,7 +780,9 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
     private void ReplaceImageSlots(
         PdfDocument document,
         IReadOnlyDictionary<(int Page, int Index), ImageSlotContent> slots,
-        List<ImageSlotReference> unmatched)
+        IReadOnlyDictionary<int, SlotSnapshot> snapshots,
+        List<ImageSlotReference> unmatched,
+        Func<PdfPage, XGraphics> canvasFor)
     {
         if (slots.Count == 0)
             return;
@@ -726,13 +791,11 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
 
         foreach (var group in byPage)
         {
-            var available = group.Key >= 1 && group.Key <= document.PageCount
-                ? ImageSlots.On(document.Pages[group.Key - 1])
-                : [];
+            var snapshot = snapshots[group.Key];
 
             foreach (var (key, content) in group.OrderBy(entry => entry.Key.Index))
             {
-                var slot = available.FirstOrDefault(candidate => candidate.Index == key.Index);
+                var slot = snapshot.Slots.FirstOrDefault(candidate => candidate.Index == key.Index);
                 var description = $"image {key.Index} on page {key.Page}";
 
                 if (slot is null)
@@ -741,7 +804,7 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
                     {
                         throw new TemplateRenderException(
                             $"The template has no {description}; that page has "
-                            + $"{available.Count} image placeholder(s). Set RenderingOptions."
+                            + $"{snapshot.Slots.Count} image placeholder(s). Set RenderingOptions."
                             + "OnMissingField to Ignore to skip it instead.");
                     }
 
@@ -750,12 +813,89 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
                 }
 
                 var page = document.Pages[key.Page - 1];
+                var caption = content.Barcode?.CaptionFraction(_options) ?? 0;
 
                 ImageSlots.Replace(page, slot, content.Barcode is { } barcode
-                    ? BarcodeForm.Build(document, barcode, description)
+                    ? BarcodeForm.Build(document, barcode, description, caption)
                     : BuildImage(document, content.Image!, description));
+
+                if (caption > 0)
+                    CaptionSlot(canvasFor(page), snapshot, slot, content.Barcode!, caption, description);
             }
         }
+    }
+
+    /// <summary>
+    /// Draws a barcode's readable value into the bottom of the placeholder the barcode replaced.
+    /// </summary>
+    /// <remarks>
+    /// The placeholder's own transform is adopted, so the value tilts with a barcode the template
+    /// turned on its side, and stays in proportion whatever shape the placeholder was stretched to.
+    /// A placeholder drawn more than once gets a caption in each place, matching the bars.
+    /// </remarks>
+    private void CaptionSlot(
+        XGraphics canvas, SlotSnapshot snapshot, ImageSlot slot,
+        BarcodeContent content, double fraction, string description)
+    {
+        if (!snapshot.Drawn.TryGetValue(slot.ResourceName, out var boxes) || boxes.Count == 0)
+        {
+            throw new TemplateRenderException(
+                $"The page does not draw {description}, so its readable value has nowhere to go. "
+                + "Leave BarcodeOptions.ShowValue off for this barcode, or use a template that "
+                + "draws the placeholder.");
+        }
+
+        foreach (var box in boxes)
+        {
+            if (box.WidthPoints <= 0 || box.HeightPoints <= 0)
+                continue;
+
+            var state = canvas.Save();
+            canvas.MultiplyTransform(box.ToCanvas);
+
+            DrawCaption(
+                canvas,
+                new XRect(0, box.HeightPoints * (1 - fraction), box.WidthPoints, box.HeightPoints * fraction),
+                content);
+
+            canvas.Restore(state);
+        }
+    }
+
+    /// <summary>
+    /// Records each addressed page's image placeholders as the template had them.
+    /// </summary>
+    /// <remarks>
+    /// This has to happen before any drawing. An image drawn into a form field is added to the
+    /// page's resources under a name of the engine's choosing, and would then be counted as a
+    /// placeholder itself — shifting the position of every placeholder a caller addressed and
+    /// filling the wrong one, with nothing about the output to say so.
+    /// </remarks>
+    private Dictionary<int, SlotSnapshot> SnapshotSlots(
+        PdfDocument document, IReadOnlyDictionary<(int Page, int Index), ImageSlotContent> slots)
+    {
+        var snapshots = new Dictionary<int, SlotSnapshot>();
+
+        foreach (var number in slots.Keys.Select(key => key.Page).Distinct())
+        {
+            if (number < 1 || number > document.PageCount)
+            {
+                snapshots[number] = new SlotSnapshot([], []);
+                continue;
+            }
+
+            var page = document.Pages[number - 1];
+
+            // Reading the page's instructions is only needed to place a readable value, so it is
+            // only done for a page that asked for one.
+            var captions = slots.Any(entry =>
+                entry.Key.Page == number && entry.Value.Barcode?.ShowsValue == true);
+
+            snapshots[number] = new SlotSnapshot(
+                ImageSlots.On(page), captions ? PlacedXObjects.On(page) : []);
+        }
+
+        return snapshots;
     }
 
     /// <summary>Turns supplied bytes into an image object the page can draw.</summary>

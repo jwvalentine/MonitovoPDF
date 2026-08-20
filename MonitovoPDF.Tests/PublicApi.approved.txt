@@ -1,5 +1,13 @@
 namespace MonitovoPDF
 {
+    public sealed class BarcodeOptions : IEquatable<BarcodeOptions>
+    {
+        public BarcodeOptions();
+        public bool ShowValue { get; init; }
+        public double? CaptionFontSizePoints { get; init; }
+        public double? CaptionHeightFraction { get; init; }
+        public string CaptionFontFamily { get; init; }
+    }
     public enum BarcodeType
     {
         Aztec = 13,
@@ -35,8 +43,8 @@ namespace MonitovoPDF
     }
     public sealed class FillBuilder
     {
-        public FillBuilder SetBarcode(string field, BarcodeType type, string value);
-        public FillBuilder SetBarcodeAt(int pageNumber, int imageIndex, BarcodeType type, string value);
+        public FillBuilder SetBarcode(string field, BarcodeType type, string value, BarcodeOptions options = null);
+        public FillBuilder SetBarcodeAt(int pageNumber, int imageIndex, BarcodeType type, string value, BarcodeOptions options = null);
         public FillBuilder SetImage(string field, System.IO.Stream image);
         public FillBuilder SetImage(string field, byte[] image);
         public FillBuilder SetImageAt(int pageNumber, int imageIndex, System.IO.Stream image);
@@ -84,6 +92,7 @@ namespace MonitovoPDF
         public RenderingOptions();
         public System.Collections.Generic.IEnumerable<System.ComponentModel.DataAnnotations.ValidationResult> Validate(System.ComponentModel.DataAnnotations.ValidationContext validationContext);
         public const string SectionName;
+        public double BarcodeCaptionHeightFraction { get; set; }
         public double DefaultFontSizePoints { get; set; }
         public double MinimumFontSizePoints { get; set; }
         public int MaxFieldCount { get; set; }

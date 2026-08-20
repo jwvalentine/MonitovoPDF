@@ -62,6 +62,7 @@ public class PublicApiTests
         // carelessly. Adding a type here should be a deliberate act.
         string[] expected =
         [
+            "MonitovoPDF.BarcodeOptions",
             "MonitovoPDF.BarcodeType",
             "MonitovoPDF.BarcodeTypes",
             "MonitovoPDF.FieldPlacement",

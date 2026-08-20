@@ -50,6 +50,17 @@ public sealed class RenderingOptions : IValidatableObject
     public double MinimumFontSizePoints { get; set; } = 5;
 
     /// <summary>
+    /// How much of a barcode's height is given to its readable value, when one is shown.
+    /// </summary>
+    /// <remarks>
+    /// The text is drawn inside the barcode's own space rather than beside it, so this is height
+    /// taken away from the bars. Raising it buys legibility at the cost of bar height, and bar
+    /// height is what lets a scanner read a symbol that is not squarely presented to it.
+    /// </remarks>
+    [Range(0.05, 0.5)]
+    public double BarcodeCaptionHeightFraction { get; set; } = 0.2;
+
+    /// <summary>
     /// Directory of TrueType files to draw text with. Applying it installs a process-wide font
     /// resolver — see <see cref="MonitovoPdf.UseFontDirectory"/>, which is the supported way to
     /// set it and explains why the scope matters.

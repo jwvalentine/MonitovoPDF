@@ -25,10 +25,20 @@ namespace MonitovoPDF.Rendering;
 /// </remarks>
 internal static class BarcodeForm
 {
-    public static PdfDictionary Build(PdfDocument document, BarcodeContent content, string fieldDescription)
+    /// <param name="document">The document the form is added to.</param>
+    /// <param name="content">The barcode to encode and draw.</param>
+    /// <param name="fieldDescription">How to name the placeholder if the value will not encode.</param>
+    /// <param name="reservedBelow">
+    /// The share of the box to leave empty at the bottom, for a readable value drawn there. The
+    /// value itself is drawn onto the page rather than into this form, because a form built by
+    /// hand has no font to draw with and a barcode caption in a substituted font is one that
+    /// might not be there at all on the machine doing the printing.
+    /// </param>
+    public static PdfDictionary Build(
+        PdfDocument document, BarcodeContent content, string fieldDescription, double reservedBelow)
     {
         var matrix = Encode(content, fieldDescription);
-        var drawing = Draw(matrix);
+        var drawing = Draw(matrix, reservedBelow);
 
         var form = new PdfDictionary(document);
         form.Elements["/Type"] = new PdfName("/XObject");
@@ -73,21 +83,25 @@ internal static class BarcodeForm
     }
 
     /// <summary>Writes the symbol as filled rectangles across the unit square.</summary>
-    private static string Draw(BitMatrix matrix)
+    private static string Draw(BitMatrix matrix, double reservedBelow)
     {
         var drawing = new StringBuilder("0 g\n");
 
         var moduleWidth = 1d / matrix.Width;
         var rows = matrix.Height;
 
-        // A linear symbology carries nothing vertically, so its bars run the full height.
-        var moduleHeight = rows == 1 ? 1d : 1d / rows;
+        // Whatever is set aside for a readable value comes out of the bottom, so the symbol keeps
+        // the top of the box and the two do not overlap.
+        var available = 1d - reservedBelow;
+
+        // A linear symbology carries nothing vertically, so its bars run the full height they have.
+        var moduleHeight = rows == 1 ? available : available / rows;
 
         for (var row = 0; row < rows; row++)
         {
             // Image space runs top down and form space runs bottom up, so the first row of the
             // symbol belongs at the top of the box. A 2D symbol drawn the other way up is mirrored.
-            var y = rows == 1 ? 0 : 1d - ((row + 1) * moduleHeight);
+            var y = rows == 1 ? reservedBelow : 1d - ((row + 1) * moduleHeight);
 
             foreach (var (start, length) in RunsIn(matrix, row))
             {
