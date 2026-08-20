@@ -41,6 +41,17 @@
   </ItemGroup>
 
   <!--
+    One font, embedded so that MonitovoPdf.UseBundledFonts() works on a host with none installed
+    — the normal case for a slim Linux container. DejaVu Sans is under the Bitstream Vera licence,
+    which permits redistribution provided the notice travels with the copies; see
+    THIRD-PARTY-NOTICES.md, which is packed alongside. Only the regular face is carried, because
+    the renderer never asks for bold or italic.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="fonts/DejaVuSans.ttf" LogicalName="MonitovoPDF.fonts.DejaVuSans.ttf" />
+  </ItemGroup>
+
+  <!--
     ZXing.Net is Apache-2.0, which requires its licence to accompany the copies. A NuGet package
     is a distribution, so the notices travel inside it as well as inside the container image.
   -->

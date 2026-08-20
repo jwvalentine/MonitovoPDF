@@ -88,20 +88,46 @@ Pass an instance to any call to change them.
 | `DefaultFontSizePoints` | 10 | Size used when a field does not specify one. |
 | `MinimumFontSizePoints` | 5 | Floor that shrink-to-fit will not go below. |
 
-Text is drawn at the size the field's default-appearance string asks for, shrinking to fit rather
-than clipping, down to the floor. Images scale to fit their field and centre, keeping aspect
-ratio, using pixel dimensions so a DPI value embedded in the image cannot change how large it
-lands.
+Text is drawn in **the font and size the field's default-appearance string asks for**. A form laid
+out for Helvetica and drawn in something wider would wrap or shrink where the designer expected it
+to fit, so the template's intent wins over `DefaultFontFamily`. That default applies only when the
+template names no font, or names one the host does not have — a missing font substitutes rather
+than failing the render.
+
+The base-14 PDF fonts map to what a host is likely to actually have: Helvetica to Arial, Times to
+Times New Roman, Courier to Courier New. Those are defined to be substituted rather than embedded,
+and most templates do **not** embed a font for an empty field — they name one and expect the
+renderer to supply it, which is why configuring fonts matters.
+
+Text shrinks to fit rather than clipping, down to the floor. Images scale to fit their field and
+centre, keeping aspect ratio, using pixel dimensions so a DPI value embedded in the image cannot
+change how large it lands.
 
 ### Fonts
 
 **On Windows the host's installed fonts are used automatically**, so nothing is needed to get
 started. On Linux, PDFsharp's cross-platform build loads no fonts at all and a slim container
-ships none, so text will fail to draw until you point the library at some:
+ships none, so text will fail to draw until you configure some. Two ways:
 
 ```csharp
+// Your own fonts. Preferred: the template's layout was designed around particular metrics.
 MonitovoPdf.UseFontDirectory("/usr/share/fonts/truetype/dejavu", fallbackFamily: "DejaVuSans");
+
+// Or the font embedded in this package, for a host that has none at all.
+MonitovoPdf.UseBundledFonts();
 ```
+
+`UseBundledFonts` draws everything in DejaVu Sans, whatever the template asked for. It is a
+working last resort rather than a substitute for real font configuration: DejaVu's metrics are
+not Arial's, so text occupies a different width than the designer saw and shrink-to-fit may
+engage where it did not before.
+
+**Configure fonts once, at start-up.** PDFsharp fixes its font resolver the first time one is
+used and will not accept another afterwards. Calling either method after a render throws.
+
+If neither is configured and the host has no usable fonts, the first render throws a
+`TemplateRenderException` naming both methods, rather than failing somewhere inside the PDF
+engine.
 
 Face names come from file names, so `Arial.ttf` serves the `Arial` family, with optional `-Bold`,
 `-Italic` and `-BoldItalic` suffixes.

@@ -1,4 +1,3 @@
-using PdfSharp.Fonts;
 
 using MonitovoPDF.Rendering;
 
@@ -7,12 +6,6 @@ namespace MonitovoPDF.Tests;
 public class BarcodeRenderingTests
 {
     private static readonly SyntheticTemplate.Field Slot = new("barcode", 10, 10, 190, 90);
-
-    static BarcodeRenderingTests()
-    {
-        GlobalFontSettings.UseWindowsFontsUnderWindows = true;
-        GlobalFontSettings.UseWindowsFontsUnderWsl2 = true;
-    }
 
     /// <summary>
     /// Content that is valid for each symbology. The symbologies differ sharply in what they

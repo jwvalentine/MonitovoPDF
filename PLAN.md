@@ -224,3 +224,34 @@ did not install unless told to force it, and the behaviour is documented rather 
 * **Phase 4 — Release.** Versioning policy, published artefacts, contribution guide, security
   disclosure policy.
 
+
+## Decision 11 — Fonts the library can rely on — **DECIDED**
+
+Two changes, both driven by the same problem: PDFsharp's cross-platform build cannot use a host's
+installed fonts, and a slim Linux container has none, so text simply fails to draw there. The
+project's own CI hit this before any consumer did.
+
+**The library carries one font.** DejaVu Sans is embedded in the assembly and served by
+`MonitovoPdf.UseBundledFonts()`. It is opt-in rather than automatic: for a label, silently drawing
+in a font whose metrics differ from the designer's changes what fits, and wrong output is worse
+than a loud failure. When nothing is configured and the host has no fonts, the first render throws
+a `TemplateRenderException` naming both `UseBundledFonts` and `UseFontDirectory`, so the failure
+carries its own fix. Only the regular face is bundled — the renderer never asks for a styled one —
+which keeps it to roughly 750KB. DejaVu adds no new licence obligation, since the container image
+already redistributes it.
+
+**The template's font is honoured.** A field's default-appearance string names a resource and a
+size; the resource resolves through the form's default resources to a base font. Previously only
+the size was read and everything drew in the configured default. Now the family travels too, with
+subset tags and style suffixes stripped, and the base-14 names mapped to what a host is likely to
+have. A family the host lacks substitutes rather than failing.
+
+Worth knowing for anything that touches this: **PDFsharp fixes its font resolver on first use.**
+Fonts can only be configured once, at start-up, and a later call throws. That constraint is
+translated into a message that says so, rather than surfacing the engine's own wording.
+
+What is deliberately *not* done is extracting font programs embedded in the template. Those are
+normally subset to the glyphs the static artwork already uses, so an empty field contributes none
+and the very characters being drawn would be missing. There is also a question of whether a font's
+embedding permission extends to authoring new text. Naming the family and letting the deployment
+supply it is both more honest and more useful.

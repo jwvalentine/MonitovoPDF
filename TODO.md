@@ -12,10 +12,25 @@ Last reviewed: 2026-08-20
 These cannot be done from the repository, and the release workflow will fail without the first.
 
 - [ ] **Set up Trusted Publishing on nuget.org.** Sign in, then username → Trusted Publishing →
-      add a policy with Repository Owner `jwvalentine`, Repository `MonitovoPDF`, Workflow File
-      `release.yml` (file name only, no path), Environment `release` or blank. No API key is
-      involved: the workflow proves its identity with a short-lived OIDC token and gets a key
-      valid for one hour, so there is no long-lived secret to leak or rotate.
+      add a policy. No API key is involved: the workflow proves its identity with a short-lived
+      OIDC token and gets a key valid for one hour, so there is no long-lived secret to leak or
+      rotate. The fields:
+
+      | Field | Value |
+      |---|---|
+      | Repository Owner | `jwvalentine` |
+      | Repository | `MonitovoPDF` |
+      | Workflow File | `release.yml` — file name only, no `.github/workflows/` path |
+      | Environment | `release`, or blank if the environment is not created |
+      | Glob Patterns and Packages | `MonitovoPDF` |
+
+      The last field scopes which package ids the temporary key may push, the same way API key
+      scoping always has, and it is **required**. The Microsoft documentation page does not
+      mention it yet. Because the package does not exist on nuget.org, it cannot be picked from
+      a list — type the id in as a pattern. Keep it to the exact id rather than `MonitovoPDF*`,
+      which would also match ids like `MonitovoPDFSomethingElse`. If companion packages appear
+      later, add `MonitovoPDF.*` on a second line; the field takes one entry per line.
+
       *If Trusted Publishing is not visible in the account, it has not rolled out there yet —
       the API-key version of the workflow is recoverable from git history as a stopgap.*
 - [ ] **Add the `NUGET_USER` repository secret**, set to the nuget.org username (the profile

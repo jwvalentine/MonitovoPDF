@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
-using PdfSharp.Fonts;
 using PdfSharp.Pdf;
 using PdfSharp.Pdf.IO;
 
@@ -13,13 +12,6 @@ public class LabelRendererTests
 {
     private static readonly SyntheticTemplate.Field Title = new("title", 10, 60, 190, 90);
     private static readonly SyntheticTemplate.Field Logo = new("logo", 10, 10, 60, 50);
-
-    static LabelRendererTests()
-    {
-        // Mirrors the host's fallback when no font directory is configured.
-        GlobalFontSettings.UseWindowsFontsUnderWindows = true;
-        GlobalFontSettings.UseWindowsFontsUnderWsl2 = true;
-    }
 
     private static LabelRenderer CreateRenderer(Action<RenderingOptions>? configure = null)
     {

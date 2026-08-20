@@ -46,6 +46,10 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Publishing $version"
 
+      # The tests draw text, and the runner ships no fonts. See ci.yml.
+      - name: Install fonts for the rendering tests
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends fonts-dejavu-core
+
       - name: Restore
         run: dotnet restore
 

@@ -38,6 +38,7 @@ namespace MonitovoPDF
         public static byte[] Fill(byte[] template, Action<FillBuilder> fill, RenderingOptions options = null);
         public static byte[] FillFile(string templatePath, Action<FillBuilder> fill, RenderingOptions options = null);
         public static void FillFile(string templatePath, string outputPath, Action<FillBuilder> fill, RenderingOptions options = null);
+        public static void UseBundledFonts(bool force = false);
         public static void UseFontDirectory(string directory, string fallbackFamily = "Arial", Action<string> onWarning = null, bool force = false);
         public static void UseInstalledFonts();
     }

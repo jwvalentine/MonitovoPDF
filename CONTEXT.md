@@ -31,7 +31,7 @@ action items.
 **The library is built, tested and packs.** `MonitovoPdf.Fill(template, fill => ...)` draws text,
 images and barcodes into the positions the template's form fields occupy, strips the fields, and
 returns a flat PDF. It targets `net8.0` and `net10.0`, and `dotnet pack` produces a package that
-has been verified by consuming it from a separate .NET 8 application. 80 tests cover the public
+has been verified by consuming it from a separate .NET 8 application. 96 tests cover the public
 API (pinned by an approval baseline), the renderer, the request decoder and the HTTP surface.
 
 Barcodes are generated in 15 symbologies — see [BarcodeType.cs](MonitovoPDF/BarcodeType.cs) —
@@ -88,7 +88,8 @@ in history after deletion. See the public-repository section of CLAUDE.md.
 ```
 MonitovoPDF/
 ├── MonitovoPDF/                      # THE PRODUCT — the library, packed to NuGet
-│   ├── MonitovoPdf.cs                # Public entry point: Fill, UseFontDirectory
+│   ├── MonitovoPdf.cs                # Public entry point: Fill, font configuration
+│   ├── fonts/DejaVuSans.ttf          # Embedded, served by UseBundledFonts()
 │   ├── FillBuilder.cs                # Collects the values to draw
 │   ├── BarcodeType.cs                # Public symbology enum
 │   ├── BarcodeTypes.cs               # Name <-> type mapping for config-driven callers
@@ -97,6 +98,7 @@ MonitovoPDF/
 │   │   ├── RenderingOptions.cs       # Ceilings and defaults (public, plain object)
 │   │   ├── BarcodeSymbology.cs       # Symbology to encoder mapping
 │   │   ├── FileSystemFontResolver.cs # Loads .ttf files from a directory
+│   │   ├── BundledFontResolver.cs    # Serves the embedded font from memory
 │   │   └── TemplateRenderException.cs # Public; the exception to catch
 │   └── MonitovoPDF.csproj            # net8.0;net10.0, packable
 ├── MonitovoPDF.Server/               # OPTIONAL HTTP host, references the library
@@ -150,7 +152,7 @@ restrictively licensed one, and the badge shows only the top layer.
 ```bash
 cd c:\dev\MonitovoPDF
 dotnet build          # currently 0 warnings, 0 errors
-dotnet test           # currently 80 passing
+dotnet test           # currently 96 passing
 dotnet pack MonitovoPDF/MonitovoPDF.csproj -c Release -o artifacts   # 0.1.0-preview.1
 dotnet run --project MonitovoPDF.Server   # optional host, http://localhost:5155
 curl http://localhost:5155/health
@@ -171,10 +173,19 @@ files. On Windows the host's installed fonts are used automatically, so local de
 without configuration — which means a font problem will first appear in a container, not here. The
 shipped `Dockerfile` installs DejaVu and sets the directory, so the image is already correct.
 
-One consequence worth knowing: the two font paths encode text differently. Windows' platform
-resolver produces literal text in the content stream, while a font loaded from a directory is
-embedded as a subset and the text becomes glyph indices. Assertions that grep the raw bytes for a
-drawn value will pass on Windows and fail in a container — use a text extractor instead.
+**The tests need a font too, and CI runners have none.** A bare `dotnet/sdk` image ships zero
+`.ttf` files, so before [TestFonts.cs](MonitovoPDF.Tests/TestFonts.cs) existed the suite passed on
+Windows and 37 of 80 tests failed on Linux with "No appropriate font found". That module
+initializer copies one font into a temporary directory and installs a resolver, so the suite runs
+anywhere; CI installs `fonts-dejavu-core` to guarantee there is one to find.
+
+It copies a single font rather than pointing at a system directory on purpose: the resolver reads
+every `.ttf` it finds, so aiming it at `C:\Windows\Fonts` would load hundreds of megabytes.
+
+A related note, because an earlier version of this file got it wrong: **both font paths write
+literal text into the content stream**, verified with `qpdf --stream-data=uncompress`. Raw-byte
+searches of a PDF fail because the content stream is *compressed*, not because the text is stored
+as glyph indices. Decompress it, or use a text extractor.
 
 ### Running the end-to-end check
 

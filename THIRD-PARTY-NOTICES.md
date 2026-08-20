@@ -68,9 +68,14 @@ project, and it was accepted deliberately.
 
 ### DejaVu fonts — Bitstream Vera Fonts License
 
-Installed in the container image only (Debian package `fonts-dejavu-core`), because
-PDFsharp's cross-platform build loads no fonts of its own and text would otherwise fail to
-draw. Not present in a source checkout. <https://dejavu-fonts.github.io/>
+Redistributed twice over, because PDFsharp's cross-platform build loads no fonts of its own
+and text would otherwise fail to draw on a host that has none:
+
+* **Embedded in the library assembly** (`MonitovoPDF/fonts/DejaVuSans.ttf`), served by
+  `MonitovoPdf.UseBundledFonts()`. Only the regular face is carried.
+* **Installed in the container image** (Debian package `fonts-dejavu-core`).
+
+<https://dejavu-fonts.github.io/>
 
 Note the clause below permitting sale only as part of a larger package: the fonts are
 redistributed here as a component of the service image, never on their own.

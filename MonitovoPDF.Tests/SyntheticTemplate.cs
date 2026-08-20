@@ -11,22 +11,49 @@ internal static class SyntheticTemplate
     internal sealed record Field(string Name, int Left, int Bottom, int Right, int Top);
 
     /// <summary>
+    /// Produces a template whose fields ask for a named font, the way a real authoring tool does:
+    /// the default appearance references a resource, and the resource resolves to a base font.
+    /// </summary>
+    /// <param name="baseFont">The <c>/BaseFont</c> value, such as "Helvetica" or "ABCDEF+Calibri".</param>
+    public static byte[] WithFontNamed(string baseFont, params Field[] fields)
+    {
+        // The font object follows the fields, so its number is known once they are counted.
+        var fontNumber = FirstFieldNumber + fields.Length;
+
+        var bodies = Bodies(fields, "/F1", $"/DR << /Font << /F1 {fontNumber} 0 R >> >>");
+        bodies.Add($"<< /Type /Font /Subtype /Type1 /BaseFont /{baseFont} >>");
+
+        return Assemble(bodies);
+    }
+
+    /// <summary>
     /// Produces a single-page PDF carrying an AcroForm with one text field per entry in
     /// <paramref name="fields"/>, each field being its own widget annotation on the page.
     /// </summary>
-    public static byte[] WithFields(params Field[] fields)
+    /// <remarks>
+    /// The default appearance names a resource the template does not define, which is the case
+    /// where the renderer has nothing to resolve and falls back to its configured font.
+    /// </remarks>
+    public static byte[] WithFields(params Field[] fields) =>
+        Assemble(Bodies(fields, "/Helv", extraFormEntries: ""));
+
+    /// <summary>Objects 1-3 are the catalog, page tree and page; the fields follow.</summary>
+    private const int FirstFieldNumber = 4;
+
+    private static List<string> Bodies(Field[] fields, string resource, string extraFormEntries)
     {
         const int pageWidth = 200;
         const int pageHeight = 100;
 
-        // Objects 1-3 are the catalog, page tree and page; the fields follow from object 4.
-        var firstFieldNumber = 4;
         var fieldReferences = string.Join(
-            " ", fields.Select((_, index) => $"{firstFieldNumber + index} 0 R"));
+            " ", fields.Select((_, index) => $"{FirstFieldNumber + index} 0 R"));
+
+        var appearance = $"{resource} 9 Tf 0 g";
 
         var bodies = new List<string>
         {
-            $"<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [{fieldReferences}] /DA (/Helv 9 Tf 0 g) >> >>",
+            $"<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [{fieldReferences}] "
+                + $"/DA ({appearance}) {extraFormEntries} >> >>",
             "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
             $"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {pageWidth} {pageHeight}] "
                 + $"/Resources << /Font << >> >> /Annots [{fieldReferences}] >>"
@@ -35,9 +62,9 @@ internal static class SyntheticTemplate
         bodies.AddRange(fields.Select(field =>
             "<< /Type /Annot /Subtype /Widget /FT /Tx "
             + $"/T ({field.Name}) /Rect [{field.Left} {field.Bottom} {field.Right} {field.Top}] "
-            + "/DA (/Helv 9 Tf 0 g) /F 4 >>"));
+            + $"/DA ({appearance}) /F 4 >>"));
 
-        return Assemble(bodies);
+        return bodies;
     }
 
     /// <summary>Serialises the objects with a correct cross-reference table.</summary>

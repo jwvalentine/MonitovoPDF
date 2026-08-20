@@ -153,6 +153,23 @@ public class MonitovoPdfTests
     }
 
     [Fact]
+    public void TheBundledFont_IsEmbeddedAndLoadable()
+    {
+        // Exercised directly rather than by installing it: PDFsharp fixes its font resolver on
+        // first use, so a test cannot swap one in without dictating how the rest of the suite
+        // renders. What matters here is that the embedded resource is present and readable.
+        var resolver = new MonitovoPDF.Rendering.BundledFontResolver();
+
+        var face = resolver.ResolveTypeface("Any Family At All", isBold: false, isItalic: false);
+        Assert.NotNull(face);
+
+        var bytes = resolver.GetFont(face!.FaceName);
+        Assert.NotNull(bytes);
+        Assert.True(bytes!.Length > 100_000, $"The embedded font looks truncated at {bytes.Length} bytes.");
+        Assert.Equal(0x00, bytes[0]);
+    }
+
+    [Fact]
     public void EveryBarcodeType_HasAName_AndRoundTrips()
     {
         foreach (var type in Enum.GetValues<BarcodeType>())

@@ -1,4 +1,5 @@
 using MonitovoPDF.Rendering;
+using PdfSharp.Drawing;
 using PdfSharp.Fonts;
 
 namespace MonitovoPDF;
@@ -32,6 +33,7 @@ public static class MonitovoPdf
 {
     private static readonly object FontGate = new();
     private static bool _platformFontsEnabled;
+    private static bool _fontsVerified;
 
     /// <summary>Fills a template held in memory and returns the finished document.</summary>
     /// <param name="template">The template PDF.</param>
@@ -72,7 +74,8 @@ public static class MonitovoPdf
             }
         }
 
-        EnsureFontsAvailable();
+        if (builder.Text.Count > 0)
+            EnsureFontsAvailable(options);
 
         return new LabelRenderer(options).Render(template, builder.Text, builder.Images, builder.Barcodes);
     }
@@ -137,23 +140,78 @@ public static class MonitovoPdf
 
         lock (FontGate)
         {
-            var installed = GlobalFontSettings.FontResolver;
+            Install(new FileSystemFontResolver(directory, fallbackFamily, onWarning), force);
+        }
+    }
 
-            if (installed is not null and not FileSystemFontResolver && !force)
-            {
-                throw new InvalidOperationException(
-                    $"A font resolver of type {installed.GetType().FullName} is already installed. "
-                    + "PDFsharp allows only one per process, so replacing it would change how the "
-                    + "rest of the application renders text. Pass force: true to replace it anyway.");
-            }
+    /// <summary>
+    /// Installs a font resolver, refusing to displace one this library did not put there.
+    /// </summary>
+    /// <remarks>
+    /// Two separate constraints apply. Only one resolver exists per process, so replacing a
+    /// foreign one would change how the rest of the application renders text. And PDFsharp fixes
+    /// the resolver as soon as it is first used, so this cannot be called after a render at all —
+    /// its own message for that is "You must not change font resolver after is was once used",
+    /// which is translated here into something that says what to do.
+    /// </remarks>
+    private static void Install(IFontResolver resolver, bool force)
+    {
+        var installed = GlobalFontSettings.FontResolver;
 
-            GlobalFontSettings.FontResolver = new FileSystemFontResolver(directory, fallbackFamily, onWarning);
+        if (!force && installed is not null and not FileSystemFontResolver and not BundledFontResolver)
+        {
+            throw new InvalidOperationException(
+                $"A font resolver of type {installed.GetType().FullName} is already installed. "
+                + "PDFsharp allows only one per process, so replacing it would change how the "
+                + "rest of the application renders text. Pass force: true to replace it anyway.");
+        }
+
+        try
+        {
+            GlobalFontSettings.FontResolver = resolver;
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new InvalidOperationException(
+                "Fonts can only be configured before the first render. PDFsharp fixes its font "
+                + "resolver as soon as one is used, and will not accept another. Call "
+                + "UseFontDirectory or UseBundledFonts once, at start-up.", exception);
+        }
+
+        _fontsVerified = false;
+    }
+
+    /// <summary>
+    /// Draws text with the font embedded in this library, for hosts that have none of their own.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The bundled font is DejaVu Sans, and every family a template asks for resolves to it. That
+    /// makes this a working last resort rather than a substitute for real font configuration:
+    /// DejaVu's metrics are not those of Arial or Helvetica, so text will occupy a different width
+    /// than the template's designer saw, and shrink-to-fit may engage where it did not before. If
+    /// a document's layout matters, supply the real fonts with <see cref="UseFontDirectory"/>.
+    /// </para>
+    /// <para>
+    /// This sets process-wide state, with the same guard as <see cref="UseFontDirectory"/>.
+    /// </para>
+    /// </remarks>
+    /// <param name="force">Replace a font resolver that this library did not install.</param>
+    /// <exception cref="InvalidOperationException">
+    /// Another font resolver is already installed and <paramref name="force"/> was not set.
+    /// </exception>
+    public static void UseBundledFonts(bool force = false)
+    {
+        lock (FontGate)
+        {
+            Install(new BundledFontResolver(), force);
         }
     }
 
     /// <summary>
     /// Draws text with the fonts installed on the host. Adequate on Windows; a Linux container
-    /// usually has none, so <see cref="UseFontDirectory"/> is needed there.
+    /// usually has none, so <see cref="UseFontDirectory"/> or <see cref="UseBundledFonts"/> is
+    /// needed there.
     /// </summary>
     /// <remarks>This sets process-wide state, as <see cref="UseFontDirectory"/> does.</remarks>
     public static void UseInstalledFonts()
@@ -167,14 +225,43 @@ public static class MonitovoPdf
     }
 
     /// <summary>
-    /// Falls back to the host's fonts when the caller has configured nothing, so that a first
-    /// render on Windows works without ceremony. An explicit resolver is never displaced.
+    /// Falls back to the host's fonts when the caller has configured nothing, then checks that a
+    /// font can actually be had. An explicit resolver is never displaced.
     /// </summary>
-    private static void EnsureFontsAvailable()
+    /// <remarks>
+    /// The check exists because the underlying failure is otherwise a bare "No appropriate font
+    /// found for family name" from deep inside the PDF engine, which says nothing about what to do
+    /// next. A host with no fonts is the normal case for a slim Linux container, so this is a
+    /// situation callers meet routinely and should be told how to fix.
+    /// </remarks>
+    private static void EnsureFontsAvailable(RenderingOptions options)
     {
-        if (_platformFontsEnabled || GlobalFontSettings.FontResolver is not null)
+        if (_fontsVerified)
             return;
 
-        UseInstalledFonts();
+        lock (FontGate)
+        {
+            if (_fontsVerified)
+                return;
+
+            if (GlobalFontSettings.FontResolver is null && !_platformFontsEnabled)
+                UseInstalledFonts();
+
+            try
+            {
+                _ = new XFont(options.DefaultFontFamily, 10);
+            }
+            catch (Exception exception)
+            {
+                throw new TemplateRenderException(
+                    $"No font is available to draw text with: nothing could resolve the family "
+                    + $"'{options.DefaultFontFamily}'. A host with no fonts installed is normal for a "
+                    + "slim Linux container. Call MonitovoPdf.UseBundledFonts() to draw with the font "
+                    + "embedded in this library, or MonitovoPdf.UseFontDirectory(path) to supply your "
+                    + "own, once at start-up.", exception);
+            }
+
+            _fontsVerified = true;
+        }
     }
 }

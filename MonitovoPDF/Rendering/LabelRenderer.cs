@@ -24,7 +24,28 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
 {
     private readonly RenderingOptions _options = options ?? new RenderingOptions();
 
-    private sealed record Placement(PdfPage Page, XRect Bounds, double FontSize, XStringAlignment Alignment);
+    private sealed record Placement(
+        PdfPage Page, XRect Bounds, string FontFamily, double FontSize, XStringAlignment Alignment);
+
+    /// <summary>Families already found to be unavailable, so each is only attempted once.</summary>
+    private readonly HashSet<string> _unavailableFamilies = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The base-14 PostScript names, mapped to the families a host is likely to actually have.
+    /// </summary>
+    /// <remarks>
+    /// These fourteen are never embedded in a PDF; the specification expects the consumer to
+    /// substitute, which is exactly what a viewer does. Without this every template written by
+    /// LibreOffice or Acrobat would ask for "Helvetica", find nothing, and warn about a
+    /// substitution that is entirely normal.
+    /// </remarks>
+    private static readonly Dictionary<string, string> BaseFontAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Helvetica"] = "Arial",
+        ["Times"] = "Times New Roman",
+        ["Times-Roman"] = "Times New Roman",
+        ["Courier"] = "Courier New",
+    };
 
     /// <summary>
     /// Draws <paramref name="textValues"/> and <paramref name="imageValues"/> into the fields of
@@ -68,9 +89,9 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
 
             // Resolve every requested field before drawing anything, so an unknown name fails the
             // whole request rather than leaving a half-populated label.
-            var textPlacements = Resolve(textValues.Keys, fields, widgetPages, formAppearance);
-            var imagePlacements = Resolve(imageValues.Keys, fields, widgetPages, formAppearance);
-            var barcodePlacements = Resolve(barcodeValues.Keys, fields, widgetPages, formAppearance);
+            var textPlacements = Resolve(textValues.Keys, fields, widgetPages, form, formAppearance);
+            var imagePlacements = Resolve(imageValues.Keys, fields, widgetPages, form, formAppearance);
+            var barcodePlacements = Resolve(barcodeValues.Keys, fields, widgetPages, form, formAppearance);
 
             var canvases = new Dictionary<PdfPage, XGraphics>();
             try
@@ -123,6 +144,7 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
         IEnumerable<string> names,
         IReadOnlyDictionary<string, PdfAcroField> fields,
         IReadOnlyDictionary<PdfObjectID, PdfPage> widgetPages,
+        PdfAcroForm form,
         string? formAppearance)
     {
         var resolved = new Dictionary<string, IReadOnlyList<Placement>>(StringComparer.Ordinal);
@@ -136,7 +158,7 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
                 continue;
             }
 
-            var placements = PlacementsFor(field, widgetPages, formAppearance);
+            var placements = PlacementsFor(field, widgetPages, form, formAppearance);
             if (placements.Count == 0)
             {
                 unusable.Add(name);
@@ -158,9 +180,10 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
     private List<Placement> PlacementsFor(
         PdfAcroField field,
         IReadOnlyDictionary<PdfObjectID, PdfPage> widgetPages,
+        PdfAcroForm form,
         string? formAppearance)
     {
-        var fontSize = ReadFontSize(field, formAppearance);
+        var (family, fontSize) = ReadAppearance(field, form, formAppearance);
         var alignment = field.Elements.GetInteger("/Q") switch
         {
             1 => XStringAlignment.Center,
@@ -196,33 +219,113 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
             if (bounds.Width <= 0 || bounds.Height <= 0)
                 return;
 
-            placements.Add(new Placement(page, bounds, fontSize, alignment));
+            placements.Add(new Placement(page, bounds, family, fontSize, alignment));
         }
     }
 
     /// <summary>
-    /// Reads the point size out of a default-appearance string such as "/Helv 9 Tf 0 g", falling
-    /// back to the configured default when it is absent or set to auto-size.
+    /// Reads the font a field asks for out of its default-appearance string, which looks like
+    /// "/Helv 9 Tf 0 g": a resource name, a size, and the Tf operator.
     /// </summary>
-    private double ReadFontSize(PdfAcroField field, string? formAppearance)
+    /// <remarks>
+    /// The resource name is a key into a font dictionary, not a family name, so it has to be
+    /// looked up to find what the template actually wants. Honouring it matters because the
+    /// template is the designer's intent — a form laid out for Helvetica and drawn in something
+    /// wider will wrap or shrink where the designer expected it to fit.
+    /// </remarks>
+    private (string Family, double Size) ReadAppearance(
+        PdfAcroField field, PdfAcroForm form, string? formAppearance)
     {
         var appearance = field.Elements.GetString("/DA");
         if (string.IsNullOrWhiteSpace(appearance))
             appearance = formAppearance;
 
         if (string.IsNullOrWhiteSpace(appearance))
-            return _options.DefaultFontSizePoints;
+            return (_options.DefaultFontFamily, _options.DefaultFontSizePoints);
 
         var tokens = appearance.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         var operatorIndex = Array.IndexOf(tokens, "Tf");
         if (operatorIndex < 1)
-            return _options.DefaultFontSizePoints;
+            return (_options.DefaultFontFamily, _options.DefaultFontSizePoints);
 
         var parsed = double.TryParse(
             tokens[operatorIndex - 1], NumberStyles.Float, CultureInfo.InvariantCulture, out var size);
 
         // A size of zero means auto-size, which shrink-to-fit already covers.
-        return parsed && size > 0 ? size : _options.DefaultFontSizePoints;
+        var resolvedSize = parsed && size > 0 ? size : _options.DefaultFontSizePoints;
+
+        var resource = operatorIndex >= 2 ? tokens[operatorIndex - 2] : null;
+        var family = ResolveFamily(resource, field, form) ?? _options.DefaultFontFamily;
+
+        return (family, resolvedSize);
+    }
+
+    /// <summary>
+    /// Turns a default-appearance resource name such as "/Helv" into a font family, by looking it
+    /// up in the default resources the field or the form carries.
+    /// </summary>
+    private static string? ResolveFamily(string? resource, PdfAcroField field, PdfAcroForm form)
+    {
+        if (string.IsNullOrWhiteSpace(resource) || resource[0] != '/')
+            return null;
+
+        // A field may carry its own resources; otherwise the form's apply.
+        var fonts = Resources(field) ?? Resources(form);
+        var font = fonts?.Elements.GetDictionary(resource);
+
+        var baseFont = font?.Elements.GetName("/BaseFont");
+
+        return string.IsNullOrWhiteSpace(baseFont) ? null : NormaliseBaseFont(baseFont);
+
+        static PdfDictionary? Resources(PdfDictionary source) =>
+            source.Elements.GetDictionary("/DR")?.Elements.GetDictionary("/Font");
+    }
+
+    /// <summary>
+    /// Reduces a PDF <c>/BaseFont</c> name to the font family to ask a resolver for.
+    /// </summary>
+    /// <remarks>
+    /// A base font name carries more than a family. "ABCDEF+Arial-Bold" is a six-letter subset
+    /// tag, the family, and a style — and the renderer never asks for a styled face, so only the
+    /// middle part is wanted. The base-14 names are then mapped to something a host is likely to
+    /// have, because those are defined to be substituted rather than embedded.
+    /// </remarks>
+    internal static string NormaliseBaseFont(string baseFont)
+    {
+        var name = baseFont.TrimStart('/');
+
+        // A subset tag is exactly six uppercase letters followed by a plus.
+        if (name.Length > 7 && name[6] == '+')
+            name = name[7..];
+
+        // Split off a style suffix, unless the whole name is one the alias table knows.
+        var dash = name.IndexOf('-');
+        if (dash > 0 && !BaseFontAliases.ContainsKey(name))
+            name = name[..dash];
+
+        return BaseFontAliases.GetValueOrDefault(name, name);
+    }
+
+    /// <summary>
+    /// Builds a font, falling back to the configured default when the template asks for one the
+    /// host does not have. Each missing family is attempted once and then remembered, because the
+    /// underlying failure is an exception and a label may have many fields.
+    /// </summary>
+    private XFont CreateFont(string family, double size)
+    {
+        if (!_unavailableFamilies.Contains(family))
+        {
+            try
+            {
+                return new XFont(family, size);
+            }
+            catch (Exception)
+            {
+                _unavailableFamilies.Add(family);
+            }
+        }
+
+        return new XFont(_options.DefaultFontFamily, size);
     }
 
     /// <summary>
@@ -260,14 +363,14 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
 
         while (size > _options.MinimumFontSizePoints)
         {
-            var candidate = new XFont(_options.DefaultFontFamily, size);
+            var candidate = CreateFont(placement.FontFamily, size);
             if (canvas.MeasureString(value, candidate).Width <= placement.Bounds.Width)
                 return candidate;
 
             size -= 0.5;
         }
 
-        return new XFont(_options.DefaultFontFamily, _options.MinimumFontSizePoints);
+        return CreateFont(placement.FontFamily, _options.MinimumFontSizePoints);
     }
 
     private void DrawImage(XGraphics canvas, Placement placement, byte[] value, string fieldName)
