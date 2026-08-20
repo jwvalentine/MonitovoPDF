@@ -1,4 +1,4 @@
-namespace MonitovoPDF.Rendering;
+namespace MonitovoPDF;
 
 /// <summary>
 /// Raised when a render fails because of the input — a malformed template, a field the template

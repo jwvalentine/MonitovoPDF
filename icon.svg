@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Source for the package icon. Regenerate icon.png at 128x128 with:
+    rsvg-convert -w 128 -h 128 icon.svg -o icon.png
+
+  A page with a barcode on it: what the library produces. Kept to a few heavy shapes so it
+  still reads at the 32px NuGet shows in search results.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <!-- Page body, with the top-right corner cut away for the fold. -->
+  <path d="M20 8 h58 l30 30 v82 a6 6 0 0 1 -6 6 h-82 a6 6 0 0 1 -6 -6 v-106 a6 6 0 0 1 6 -6 z"
+        fill="#ffffff" stroke="#1f2a37" stroke-width="7" stroke-linejoin="round"/>
+
+  <!-- The folded corner. -->
+  <path d="M78 8 v24 a6 6 0 0 0 6 6 h24 z" fill="#1f2a37"/>
+
+  <!-- Two text lines. -->
+  <rect x="34" y="52" width="42" height="7" rx="3.5" fill="#1f2a37"/>
+  <rect x="34" y="66" width="60" height="7" rx="3.5" fill="#9aa4b2"/>
+
+  <!-- Barcode: wide and narrow bars, the thing that makes it a label. -->
+  <g fill="#1f2a37">
+    <rect x="34" y="86" width="6" height="26"/>
+    <rect x="44" y="86" width="3" height="26"/>
+    <rect x="51" y="86" width="6" height="26"/>
+    <rect x="61" y="86" width="3" height="26"/>
+    <rect x="68" y="86" width="3" height="26"/>
+    <rect x="75" y="86" width="6" height="26"/>
+    <rect x="85" y="86" width="3" height="26"/>
+    <rect x="92" y="86" width="6" height="26"/>
+  </g>
+</svg>

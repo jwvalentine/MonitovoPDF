@@ -1,0 +1,94 @@
+name: Release
+
+# Publishing is driven by a tag, so the released version is whatever the tag says and the
+# repository state at that tag is exactly what shipped. Tag as vX.Y.Z, for example v0.2.0.
+#
+# Credentials come from NuGet Trusted Publishing: the job proves its identity to nuget.org with
+# a short-lived OIDC token from GitHub and receives an API key valid for one hour. There is no
+# long-lived secret in this repository to leak, rotate, or forget about.
+#
+# Setting this up on nuget.org needs a trusted publishing policy with:
+#   Repository Owner: jwvalentine
+#   Repository:       MonitovoPDF
+#   Workflow File:    release.yml        (file name only, no path)
+#   Environment:      release            (or leave blank; it is only checked when set)
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write   # create the GitHub release
+  id-token: write   # request the OIDC token that stands in for an API key
+
+jobs:
+  publish:
+    name: Pack and publish to NuGet
+    runs-on: ubuntu-latest
+    # Environments can carry required reviewers, which turns a publish into a deliberate act
+    # rather than a consequence of pushing a tag. Add them in Settings > Environments.
+    environment: release
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Read the version from the tag
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "Tag '$GITHUB_REF_NAME' is not vMAJOR.MINOR.PATCH[-prerelease]." >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Publishing $version"
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore -warnaserror
+
+      # Never publish something that has not passed its tests, tag or no tag.
+      - name: Test
+        run: dotnet test --configuration Release --no-build --verbosity normal
+
+      # Point the release notes at this version's own release page rather than the generic list.
+      - name: Pack
+        run: >
+          dotnet pack MonitovoPDF/MonitovoPDF.csproj
+          --configuration Release
+          -p:Version=${{ steps.version.outputs.version }}
+          -p:ContinuousIntegrationBuild=true
+          "-p:PackageReleaseNotes=Release notes: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+          -o artifacts
+
+      # The temporary key lasts an hour and each token buys exactly one key, so this comes as
+      # late as possible — after everything that could fail and delay the push.
+      #
+      # Pinned to a commit rather than the moving v1 tag: this step exchanges an identity token
+      # for a publishing credential, which makes it the most sensitive action in the repository.
+      - name: Exchange the OIDC token for a short-lived NuGet key
+        id: login
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
+      - name: Publish to NuGet
+        run: >
+          dotnet nuget push "artifacts/*.nupkg"
+          --api-key ${{ steps.login.outputs.NUGET_API_KEY }}
+          --source https://api.nuget.org/v3/index.json
+          --skip-duplicate
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >
+          gh release create "$GITHUB_REF_NAME"
+          --title "$GITHUB_REF_NAME"
+          --generate-notes
+          artifacts/*.nupkg

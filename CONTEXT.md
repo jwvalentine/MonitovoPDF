@@ -31,8 +31,8 @@ action items.
 **The library is built, tested and packs.** `MonitovoPdf.Fill(template, fill => ...)` draws text,
 images and barcodes into the positions the template's form fields occupy, strips the fields, and
 returns a flat PDF. It targets `net8.0` and `net10.0`, and `dotnet pack` produces a package that
-has been verified by consuming it from a separate .NET 8 application. 78 tests cover the public
-API, the renderer, the request decoder and the HTTP surface.
+has been verified by consuming it from a separate .NET 8 application. 80 tests cover the public
+API (pinned by an approval baseline), the renderer, the request decoder and the HTTP surface.
 
 Barcodes are generated in 15 symbologies — see [BarcodeType.cs](MonitovoPDF/BarcodeType.cs) —
 drawn as vector rectangles rather than rasterised, so bar edges stay exact at print resolution.
@@ -42,8 +42,13 @@ container-based end-to-end check: LibreOffice builds a real PDF form through its
 service fills it, poppler reads the text back out, and three independent decoders read the
 barcodes back.
 
-**Not yet built:** authentication of any kind, CI, and OpenAPI documentation. The service must not
-be exposed to an untrusted network as it stands.
+**Not yet built:** authentication of any kind, and OpenAPI documentation. The service must not be
+exposed to an untrusted network as it stands.
+
+**Not yet published.** CI and a tag-driven release workflow are in place, but nothing is on
+nuget.org. Publishing uses Trusted Publishing rather than a stored key, so what is missing is a
+policy on nuget.org and a `NUGET_USER` secret — both of which only Joe can set up. See the top of
+[TODO.md](TODO.md).
 
 **Not yet proven:** nothing has been sent to an actual label printer. The chain is verified as far
 as a correct PDF that an independent extractor can read; the final hop to hardware is untested.
@@ -109,6 +114,8 @@ MonitovoPDF/
 ├── Dockerfile                        # Image for the server; installs DejaVu so text can draw
 ├── licenses/Apache-2.0.txt           # Ships in the package and the image, for ZXing.Net
 ├── THIRD-PARTY-NOTICES.md            # Redistributed works and the copyleft audit
+├── .github/workflows/                # CI on pull requests, release on a v* tag
+├── SECURITY.md                       # Private disclosure channel
 ├── MonitovoPDF.slnx                  # Solution tying the three projects together
 ├── CLAUDE.md                         # Governing rules for AI agents
 ├── AGENTS.md                         # Pointer to CLAUDE.md
@@ -128,7 +135,7 @@ MonitovoPDF/
 | PDF engine | PDFsharp 6.2.4 (MIT, verified upstream) |
 | Barcodes | ZXing.Net 0.16.11 (Apache-2.0, no transitive dependencies) |
 | Tests | xUnit, with `Microsoft.AspNetCore.Mvc.Testing` for the HTTP surface |
-| CI | **Not yet set up** |
+| CI | GitHub Actions: build, test and pack on PRs; release on a `v*` tag |
 | Licence | MIT |
 
 Dependencies are deliberately few: PDFsharp and ZXing.Net are the only runtime packages, and
@@ -143,8 +150,8 @@ restrictively licensed one, and the badge shows only the top layer.
 ```bash
 cd c:\dev\MonitovoPDF
 dotnet build          # currently 0 warnings, 0 errors
-dotnet test           # currently 78 passing
-dotnet pack MonitovoPDF/MonitovoPDF.csproj -c Release -o artifacts
+dotnet test           # currently 80 passing
+dotnet pack MonitovoPDF/MonitovoPDF.csproj -c Release -o artifacts   # 0.1.0-preview.1
 dotnet run --project MonitovoPDF.Server   # optional host, http://localhost:5155
 curl http://localhost:5155/health
 ```
@@ -197,3 +204,17 @@ library. `MonitovoPdf.UseFontDirectory` therefore refuses to displace a resolver
 install unless `force: true` is passed, and a first render with nothing configured falls back to
 the host's installed fonts rather than failing. Do not make this implicit — a library that quietly
 changes how its host renders text is a bug waiting to be filed against the wrong project.
+
+---
+
+## The public API is a pinned contract
+
+[PublicApi.approved.txt](MonitovoPDF.Tests/PublicApi.approved.txt) is a rendering of every public
+type and member in the library, and [PublicApiTests.cs](MonitovoPDF.Tests/PublicApiTests.cs) fails
+if the real surface drifts from it. Regenerating the baseline is easy and that is the point: the
+diff is what gets reviewed. Do not regenerate it to make a test pass without reading what changed
+— anything removed or retyped breaks every consumer who upgrades.
+
+It has already earned this. It caught `RenderingOptions` and `TemplateRenderException` sitting in
+`MonitovoPDF.Rendering` while everything else was in `MonitovoPDF`, which would have forced every
+consumer to write a second `using` just to catch the library's own exception.

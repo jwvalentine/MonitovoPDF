@@ -12,18 +12,21 @@
 
 ## Vision
 
-A small, self-hostable HTTP service that fills template documents with data, with no per-document
-cost and no licence obligation that prevents embedding it in a commercial product.
+A small .NET library that fills template documents with data inside the application that needs
+them, with no per-document cost and no licence obligation that prevents embedding it in a
+commercial product. An HTTP host ships alongside for callers that want it over the wire.
 
 ## Design Principles
 
 1. **One job, done well.** Template and data in, PDF out. Not a document management system.
 2. **Permissive all the way down.** MIT, on top of dependencies whose licences allow
    redistribution under MIT.
-3. **Safe by default.** The service accepts untrusted input. Bounded resources and no network
+3. **Safe by default.** Templates are untrusted even in process. Bounded resources and no network
    reach from the renderer are requirements, not features.
-4. **Few dependencies.** Every package is a licence obligation and a patching burden.
-5. **Runs anywhere.** A single container, no external services required.
+4. **Few dependencies.** Every package is a licence obligation and a patching burden — and one
+   the consumer inherits, which is a stronger reason for a library than for a service.
+5. **Impose nothing on the consumer.** No DI container, no logging framework, no configuration
+   system. Options are a plain object and failures are exceptions.
 
 ---
 
@@ -79,15 +82,64 @@ This replaced a flat layout in which the application project sat at the root and
 inside its directory, which forced explicit source-glob exclusions. Splitting the library out
 removed that wart as a side effect.
 
+## Decision 9 — Versioning — **DECIDED: SemVer, driven by a tag**
+
+The package follows [Semantic Versioning](https://semver.org). Releases are cut by pushing a
+`vX.Y.Z` tag; the release workflow takes the version from the tag, so what shipped and what the
+repository held at that tag cannot disagree. The `<Version>` in the project file is the working
+version between releases and is overridden at pack time.
+
+**While the project is pre-1.0**, the usual 0.x caveat applies: a minor bump may break the API.
+That freedom is the reason to stay at 0.x until the surface has been used in anger. The public
+API is pinned by an approval test, so a break is visible in review as a diff rather than
+discovered by a consumer.
+
+**From 1.0 onwards**, a breaking change to the public API requires a major bump. The approval
+test's baseline is the definition of that surface, and changing it is the moment to ask whether a
+major version is warranted.
+
+Prereleases use a suffix the tag carries — `v0.1.0-preview.1`, `v1.0.0-rc.1` — and publish like
+any other version. NuGet's guidance is to publish a non-stable package as a pre-release, so the
+releases stay suffixed until the API has been used in anger; consumers install with
+`--prerelease` until then.
+
 ## Decision 5 — Distribution — **DECIDED: a NuGet package, with a container for the host**
 
 The library is the product and ships as a NuGet package targeting `net8.0` and `net10.0`. The
 HTTP host ships as a container image for callers that want the capability over HTTP.
 
-What is still open is *publishing*: nothing is pushed to nuget.org or a registry yet, and that
-needs a versioning policy and a release workflow first. The package builds correctly today with
-`dotnet pack`, carries XML documentation for IntelliSense, and includes the third-party notices
-that ZXing.Net's Apache-2.0 terms require.
+Publishing runs from CI: pushing a `vX.Y.Z` tag builds, tests, packs and pushes to nuget.org, then
+opens a GitHub release. See Decision 9 for the versioning policy and Decision 10 for how the
+workflow authenticates.
+
+The package carries XML documentation for IntelliSense, a symbols package, and the third-party
+notices that ZXing.Net's Apache-2.0 terms require.
+
+## Decision 10 — Publishing credentials — **DECIDED: Trusted Publishing, no stored key**
+
+The release workflow authenticates to nuget.org with [Trusted
+Publishing](https://learn.microsoft.com/en-us/nuget/nuget-org/trusted-publishing) rather than a
+stored API key. GitHub issues a short-lived, signed OIDC token describing the repository and
+workflow; nuget.org validates it against a policy and returns an API key valid for one hour.
+
+The reason is simple: **there is no long-lived secret in this repository to leak.** A stored
+publishing key is a standing credential — it sits in settings, it has to be rotated, and anyone
+who obtains it can publish under this package id until someone notices. A token that exists for
+the length of one job cannot be exfiltrated from a repository that never holds it. NuGet's own
+guidance now prefers this, and it is the same direction PyPI and others have taken.
+
+Three consequences worth recording:
+
+* **The login step comes last**, immediately before the push. The key lasts an hour and each
+  token buys exactly one key, so requesting it before a long build risks it expiring.
+* **`NuGet/login` is pinned to a commit**, not the moving `v1` tag. It is the step that turns an
+  identity token into a publishing credential, so a silently updated version of it is the worst
+  supply-chain outcome available in this repository.
+* **The job runs in a `release` environment**, which can carry required reviewers. Publishing
+  should be a deliberate approval, not a side effect of pushing a tag.
+
+The only stored value is `NUGET_USER`, the nuget.org profile name. That is an identifier, not a
+credential.
 
 ## Decision 6 — Fonts in a container — **DECIDED: ship DejaVu in the image**
 

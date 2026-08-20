@@ -1,6 +1,5 @@
 using System.Text;
 using MonitovoPDF;
-using MonitovoPDF.Rendering;
 
 namespace MonitovoPDF.Tests;
 

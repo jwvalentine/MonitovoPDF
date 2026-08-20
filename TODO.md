@@ -7,17 +7,31 @@ Last reviewed: 2026-08-20
 
 ---
 
+## Before the first release — needs Joe
+
+These cannot be done from the repository, and the release workflow will fail without the first.
+
+- [ ] **Set up Trusted Publishing on nuget.org.** Sign in, then username → Trusted Publishing →
+      add a policy with Repository Owner `jwvalentine`, Repository `MonitovoPDF`, Workflow File
+      `release.yml` (file name only, no path), Environment `release` or blank. No API key is
+      involved: the workflow proves its identity with a short-lived OIDC token and gets a key
+      valid for one hour, so there is no long-lived secret to leak or rotate.
+      *If Trusted Publishing is not visible in the account, it has not rolled out there yet —
+      the API-key version of the workflow is recoverable from git history as a stopgap.*
+- [ ] **Add the `NUGET_USER` repository secret**, set to the nuget.org username (the profile
+      name, not an email address). It is the one input the login step needs.
+- [ ] **Create the `release` GitHub environment** and consider adding yourself as a required
+      reviewer. That turns publishing into a deliberate approval rather than a side effect of
+      pushing a tag.
+- [ ] **Reserve the `MonitovoPDF` package id on nuget.org** before someone else does, and check
+      whether the `Monitovo` prefix qualifies for id-prefix reservation, which earns the verified
+      check mark on the package page. Tagging `v0.1.0-preview.1` claims the id and exercises the
+      release path in one go.
+- [ ] **Enable branch protection on `main`**: require a pull request and require the CI check to
+      pass. The no-direct-commits rule is documented but not enforced.
+
 ## Next up
 
-- [ ] **Publish the package.** It builds, carries XML docs and notices, and has been verified by
-      consuming it from a separate .NET 8 application, but nothing is pushed to nuget.org. Needs a
-      versioning policy and a release workflow first.
-- [ ] **Add a GitHub Actions workflow**: restore, build, test and pack on pull requests to `main`.
-      Consider running the `integration/` container there too, though it is slow to build.
-- [ ] **Add an API-surface test.** The public surface is now a shipped contract; a public-API
-      approval test would make an accidental breaking change visible in review.
-- [ ] **Enable branch protection on `main`** so the no-direct-commits rule is enforced rather than
-      documented.
 - [ ] **Print a rendered label on real hardware.** A LibreOffice-authored template is now filled
       end to end in Docker and read back with poppler, but nothing has been sent to an actual label
       printer. That is the last unverified link in the chain.
@@ -51,11 +65,14 @@ Last reviewed: 2026-08-20
 
 ## Repository housekeeping
 
-- [ ] Decide whether to add `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` and `SECURITY.md`. A public
-      repo inviting contributions usually wants all three; `SECURITY.md` matters most, because it
-      gives people a private channel to report vulnerabilities instead of opening a public issue.
+- [ ] Decide whether to add `CONTRIBUTING.md` and `CODE_OF_CONDUCT.md`. `SECURITY.md` is written,
+      and it was the one that mattered: it gives people a private channel to report a vulnerability
+      instead of opening a public issue.
 - [ ] Add repository topics and confirm the description on GitHub for discoverability.
-- [ ] Decide on a versioning policy before the first release. The package is at 0.1.0.
+- [ ] Consider pinning the remaining GitHub Actions to commit SHAs. `NuGet/login` is already
+      pinned, because it exchanges an identity token for a publishing credential and so is the
+      most sensitive step in the repository. The first-party `actions/*` steps still float on
+      major tags.
 
 ## Deferred / to revisit
 

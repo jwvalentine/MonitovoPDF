@@ -25,8 +25,11 @@ document that renders identically everywhere.
 ## Install
 
 ```bash
-dotnet add package MonitovoPDF
+dotnet add package MonitovoPDF --prerelease
 ```
+
+The `--prerelease` flag is needed for now: releases carry a pre-release suffix while the API is
+still settling, and will drop it at 1.0.
 
 Targets `net8.0` and `net10.0`. Two dependencies, neither copyleft and neither bringing
 dependencies of its own: [PDFsharp](https://github.com/empira/PDFsharp) (MIT) and
@@ -209,10 +212,43 @@ docker compose -f integration/docker-compose.yml up --build --abort-on-container
 
 Artefacts land in `integration/out/`. The run exits non-zero if any check fails.
 
+### The public API is pinned
+
+`MonitovoPDF.Tests/PublicApi.approved.txt` holds a rendering of the library's entire public
+surface, and a test fails if the two drift apart. Once the package is published that surface is a
+contract, and this makes an accidental break show up in review as a diff rather than in a
+consumer's build. When a change is intended, the failure names a `.received.txt` file to copy over
+the approved one — reviewing that diff is the point.
+
+## Versioning and releases
+
+The package follows [Semantic Versioning](https://semver.org). A release is cut by pushing a tag:
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+The release workflow takes the version from the tag, builds, tests, packs, pushes to nuget.org and
+opens a GitHub release.
+
+It authenticates with [NuGet Trusted
+Publishing](https://learn.microsoft.com/en-us/nuget/nuget-org/trusted-publishing): GitHub issues a
+short-lived OIDC token, nuget.org validates it against a policy and returns a key valid for one
+hour. No publishing key is stored in this repository, so there is nothing here to leak or rotate.
+The only stored value is `NUGET_USER`, the nuget.org profile name, which is an identifier rather
+than a credential.
+
+While the project is pre-1.0 the usual 0.x caveat applies: a minor bump may break the API. From
+1.0, a breaking change to the public surface requires a major bump.
+
 ## Contributing
 
 Issues and pull requests are welcome. For anything substantial, please open an issue first so the
 approach can be discussed before you spend time on it.
+
+Security problems are different: please report them privately rather than in an issue. See
+[SECURITY.md](SECURITY.md).
 
 ## License
 
