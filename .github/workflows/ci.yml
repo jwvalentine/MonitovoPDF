@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build, test and pack
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # The runner has no fonts, and PDFsharp's cross-platform build cannot use the host's
+      # anyway, so anything that draws text fails without this. Same reason the runtime image
+      # installs them.
+      - name: Install fonts for the rendering tests
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends fonts-dejavu-core
+
+      - name: Restore
+        run: dotnet restore
+
+      # Zero warnings is a project rule, so CI enforces it rather than trusting review.
+      - name: Build
+        run: dotnet build --configuration Release --no-restore -warnaserror
+
+      - name: Test
+        run: dotnet test --configuration Release --no-build --verbosity normal
+
+      # Packing in CI catches metadata and licence-file problems before a release tag does.
+      - name: Pack
+        run: dotnet pack MonitovoPDF/MonitovoPDF.csproj --configuration Release --no-build -o artifacts
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package
+          path: artifacts/*
+          if-no-files-found: error
+
+  integration:
+    name: End-to-end against a real template
+    runs-on: ubuntu-latest
+    # Runs on pull requests too. It builds a LibreOffice image and so is the slow half of CI, but
+    # it is also the only check that proves the actual product works: a template authored by a
+    # real tool, filled, and read back by decoders that are not the encoder. A check that only
+    # runs after merge reports problems too late to stop them.
+    needs: build
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fill a LibreOffice-authored template and decode the barcodes
+        run: >
+          docker compose -f integration/docker-compose.yml up
+          --build --abort-on-container-exit --exit-code-from integration
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-output
+          path: integration/out/*.pdf
+          if-no-files-found: warn

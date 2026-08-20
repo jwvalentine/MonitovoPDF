@@ -9,25 +9,30 @@
 
   <PropertyGroup>
     <PackageId>MonitovoPDF</PackageId>
-    <Version>0.1.0</Version>
+    <!--
+      Pre-release while the API is still settling. NuGet's guidance is to publish a non-stable
+      package as a pre-release, and the README says to expect breaking changes, so the version
+      should say so too. A release tag overrides this at pack time.
+    -->
+    <Version>0.1.0-preview.1</Version>
     <Authors>Monitovo LLC</Authors>
     <Company>Monitovo LLC</Company>
     <Copyright>Copyright (c) 2026 Monitovo LLC</Copyright>
-    <Description>
-      Fills template PDFs with text, images and barcodes, in process. Placeholders are ordinary
-      AcroForm fields; values are drawn into the page content and the form is stripped, so the
-      output is flat and renders identically in every viewer. No per-document licensing.
-    </Description>
-    <PackageTags>pdf;template;acroform;barcode;label;printing;code128;qr</PackageTags>
+    <!-- Kept on one line: newlines here are preserved verbatim on the package page. -->
+    <Description>Fills template PDFs with text, images and barcodes, in process. Placeholders are ordinary AcroForm fields; values are drawn into the page content and the form is stripped, so the output is flat and renders identically in every viewer. A permissively licensed alternative to the commercial PDF components, with no per-document cost.</Description>
+    <PackageTags>pdf;template;acroform;form-fill;barcode;label;printing;code128;qrcode;datamatrix</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/jwvalentine/MonitovoPDF</PackageProjectUrl>
+    <PackageIcon>icon.png</PackageIcon>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageReleaseNotes>Release notes for each version are at https://github.com/jwvalentine/MonitovoPDF/releases</PackageReleaseNotes>
     <RepositoryUrl>https://github.com/jwvalentine/MonitovoPDF</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <!-- Source Link ships in the SDK; these make it stamp the commit into the package. -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
-    <EmbedUntrackedSources>true</EmbedUntrackedSources>
-    <PublishRepositoryUrl>true</PublishRepositoryUrl>
   </PropertyGroup>
 
   <ItemGroup>
@@ -36,11 +41,23 @@
   </ItemGroup>
 
   <!--
+    One font, embedded so that MonitovoPdf.UseBundledFonts() works on a host with none installed
+    — the normal case for a slim Linux container. DejaVu Sans is under the Bitstream Vera licence,
+    which permits redistribution provided the notice travels with the copies; see
+    THIRD-PARTY-NOTICES.md, which is packed alongside. Only the regular face is carried, because
+    the renderer never asks for bold or italic.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="fonts/DejaVuSans.ttf" LogicalName="MonitovoPDF.fonts.DejaVuSans.ttf" />
+  </ItemGroup>
+
+  <!--
     ZXing.Net is Apache-2.0, which requires its licence to accompany the copies. A NuGet package
     is a distribution, so the notices travel inside it as well as inside the container image.
   -->
   <ItemGroup>
     <None Include="../README.md" Pack="true" PackagePath="/" />
+    <None Include="../icon.png" Pack="true" PackagePath="/" />
     <None Include="../THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="/" />
     <None Include="../licenses/Apache-2.0.txt" Pack="true" PackagePath="licenses/" />
   </ItemGroup>

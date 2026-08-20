@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Options;
 using MonitovoPDF;
-using MonitovoPDF.Rendering;
 using MonitovoPDF.Server;
 using MonitovoPDF.Server.Api;
 

@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace MonitovoPDF.Rendering;
+namespace MonitovoPDF;
 
 /// <summary>
 /// Ceilings and defaults for template rendering.

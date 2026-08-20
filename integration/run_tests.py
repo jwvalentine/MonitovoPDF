@@ -101,10 +101,11 @@ def striped_png(width=240, height=100):
 def extract_text(path):
     """Extracts the visible text of a PDF using poppler.
 
-    Using an independent extractor rather than grepping the content stream checks the
-    thing that actually matters: that a different PDF consumer can read what was drawn.
-    The bytes are not searchable directly, because an embedded font subset stores text as
-    glyph indices rather than as characters.
+    Using an independent extractor rather than grepping the content stream checks the thing
+    that actually matters: that a different PDF consumer can read what was drawn. The raw
+    bytes are not searchable because the content stream is compressed — the text itself is
+    written literally, so decompressing would also work, but a real extractor is the better
+    check.
     """
     result = subprocess.run(
         ["pdftotext", "-layout", path, "-"],

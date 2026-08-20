@@ -1,0 +1,65 @@
+namespace MonitovoPDF
+{
+    public enum BarcodeType
+    {
+        Aztec = 13,
+        Codabar = 3,
+        Code128 = 0,
+        Code39 = 1,
+        Code93 = 2,
+        DataMatrix = 12,
+        Ean13 = 5,
+        Ean8 = 6,
+        Itf = 4,
+        Msi = 9,
+        Pdf417 = 14,
+        Plessey = 10,
+        QrCode = 11,
+        UpcA = 7,
+        UpcE = 8,
+    }
+    public static class BarcodeTypes
+    {
+        public static System.Collections.Generic.IReadOnlyList<string> Names { get; }
+        public static bool TryParse(string name, out BarcodeType type);
+        public static string NameOf(BarcodeType type);
+    }
+    public sealed class FillBuilder
+    {
+        public FillBuilder SetBarcode(string field, BarcodeType type, string value);
+        public FillBuilder SetImage(string field, System.IO.Stream image);
+        public FillBuilder SetImage(string field, byte[] image);
+        public FillBuilder SetText(string field, string value);
+        public FillBuilder();
+    }
+    public static class MonitovoPdf
+    {
+        public static byte[] Fill(System.IO.Stream template, Action<FillBuilder> fill, RenderingOptions options = null);
+        public static byte[] Fill(byte[] template, Action<FillBuilder> fill, RenderingOptions options = null);
+        public static byte[] FillFile(string templatePath, Action<FillBuilder> fill, RenderingOptions options = null);
+        public static void FillFile(string templatePath, string outputPath, Action<FillBuilder> fill, RenderingOptions options = null);
+        public static void UseBundledFonts(bool force = false);
+        public static void UseFontDirectory(string directory, string fallbackFamily = "Arial", Action<string> onWarning = null, bool force = false);
+        public static void UseInstalledFonts();
+    }
+    public sealed class RenderingOptions : System.ComponentModel.DataAnnotations.IValidatableObject
+    {
+        public RenderingOptions();
+        public System.Collections.Generic.IEnumerable<System.ComponentModel.DataAnnotations.ValidationResult> Validate(System.ComponentModel.DataAnnotations.ValidationContext validationContext);
+        public const string SectionName;
+        public double DefaultFontSizePoints { get; set; }
+        public double MinimumFontSizePoints { get; set; }
+        public int MaxFieldCount { get; set; }
+        public int MaxImageBytes { get; set; }
+        public int MaxPages { get; set; }
+        public int MaxTemplateBytes { get; set; }
+        public int MaxTextLength { get; set; }
+        public string DefaultFontFamily { get; set; }
+        public string FontDirectory { get; set; }
+    }
+    public sealed class TemplateRenderException : Exception, System.Runtime.Serialization.ISerializable
+    {
+        public TemplateRenderException(string message);
+        public TemplateRenderException(string message, Exception innerException);
+    }
+}
