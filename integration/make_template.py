@@ -122,6 +122,71 @@ def export_pdf(document, path):
     document.storeToURL(uno.systemPathToFileUrl(path), arguments)
 
 
+def build_barcode_sheet(desktop, names):
+    """Creates an A4 template with one generously sized form field per symbology name."""
+    document = desktop.loadComponentFromURL("private:factory/swriter", "_blank", 0, ())
+
+    page_style = document.StyleFamilies.getByName("PageStyles").getByName("Standard")
+    page_style.Width = 210 * MM
+    page_style.Height = 297 * MM
+    for margin in ("TopMargin", "BottomMargin", "LeftMargin", "RightMargin"):
+        setattr(page_style, margin, 0)
+
+    draw_page = document.DrawPage
+
+    columns = 3
+    cell_width, cell_height = 66, 56
+    field_width, field_height = 58, 26
+
+    for index, name in enumerate(names):
+        column, row = index % columns, index // columns
+        x = 6 + (column * cell_width)
+        y = 10 + (row * cell_height)
+
+        control = document.createInstance("com.sun.star.form.component.TextField")
+        control.Name = name
+
+        shape = document.createInstance("com.sun.star.drawing.ControlShape")
+        shape.setSize(Size(field_width * MM, field_height * MM))
+        shape.setControl(control)
+        draw_page.add(shape)
+
+        shape.AnchorType = AT_PAGE
+        shape.HoriOrient = HORI_NONE
+        shape.VertOrient = VERT_NONE
+        shape.HoriOrientRelation = PAGE_FRAME
+        shape.VertOrientRelation = PAGE_FRAME
+        shape.setPosition(Point(x * MM, y * MM))
+
+        if shape.AnchorType != AT_PAGE:
+            raise RuntimeError(f"Control '{name}' would not anchor to the page.")
+
+    return document
+
+
+def barcode_sheet(output_path, names):
+    """Builds the all-symbologies template at the given path."""
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    office = start_libreoffice()
+    try:
+        context = connect()
+        desktop = context.ServiceManager.createInstanceWithContext(
+            "com.sun.star.frame.Desktop", context)
+
+        document = build_barcode_sheet(desktop, names)
+        try:
+            export_pdf(document, output_path)
+        finally:
+            document.close(False)
+
+        print(f"Wrote {output_path} ({os.path.getsize(output_path)} bytes) "
+              f"with {len(names)} barcode field(s)")
+    finally:
+        office.terminate()
+        office.wait(timeout=30)
+
+
 def main_with_output(output_path):
     """Builds the template at the given path, starting and stopping LibreOffice around it."""
     os.makedirs(os.path.dirname(output_path), exist_ok=True)

@@ -25,13 +25,18 @@ action items.
 ## Current State
 
 **The first rendering path is built and tested.** `POST /v1/labels` takes a base64 template plus
-text and image values, draws them into the page at the positions the template's form fields
-occupy, strips the fields, and returns a flat PDF. There is a `/health` endpoint. 27 tests cover
-the renderer, the request decoder and the HTTP surface.
+text, image and barcode values, draws them into the page at the positions the template's form
+fields occupy, strips the fields, and returns a flat PDF. There is a `/health` endpoint. 57 tests
+cover the renderer, the request decoder and the HTTP surface.
+
+The service generates barcodes itself in 15 symbologies — see
+[BarcodeSymbology.cs](Rendering/BarcodeSymbology.cs) — drawn as vector rectangles rather than
+rasterised, so bar edges stay exact at print resolution.
 
 A `Dockerfile` builds a runnable image with fonts installed, and `integration/` holds a
 container-based end-to-end check: LibreOffice builds a real PDF form through its own API, the
-service fills it, and poppler reads the values back out.
+service fills it, poppler reads the text back out, and three independent decoders read the
+barcodes back.
 
 **Not yet built:** authentication of any kind, CI, and OpenAPI documentation. The service must not
 be exposed to an untrusted network as it stands.
@@ -79,16 +84,20 @@ MonitovoPDF/
 ├── Rendering/
 │   ├── LabelRenderer.cs              # The core: draws values into a template, strips the form
 │   ├── RenderingOptions.cs           # Configured ceilings and defaults
+│   ├── BarcodeSymbology.cs           # The symbologies callers may ask for
 │   ├── FileSystemFontResolver.cs     # Loads .ttf files from a configured directory
 │   └── TemplateRenderException.cs    # Caller-input failures, mapped to 4xx
 ├── MonitovoPDF.Tests/                # xUnit; synthetic PDF fixtures built in code
 ├── integration/                      # LibreOffice-driven end-to-end check, run via Docker
 │   ├── make_template.py              # Builds an AcroForm template through the UNO API
+│   ├── barcodes.py                   # All-symbologies sheet, and decoding it back
 │   ├── run_tests.py                  # Fills it against the running service and inspects the result
-│   ├── Dockerfile                    # LibreOffice + poppler
+│   ├── Dockerfile                    # LibreOffice + poppler + zbar, libdmtx, zxing-cpp
 │   └── docker-compose.yml            # Runs the service and the check together
 ├── Dockerfile                        # Runtime image; installs DejaVu so text can draw
-├── MonitovoPDF.csproj                # net10.0, nullable + implicit usings, PDFsharp 6.2.4
+├── licenses/Apache-2.0.txt           # Shipped with the image for ZXing.Net
+├── THIRD-PARTY-NOTICES.md            # Redistributed works and the copyleft audit
+├── MonitovoPDF.csproj                # net10.0, nullable + implicit usings
 ├── MonitovoPDF.slnx                  # Solution tying the app and test projects together
 ├── appsettings.json                  # Defaults, including the Rendering ceilings
 ├── Properties/launchSettings.json    # Local dev ports (http 5155, https 7255)
@@ -108,11 +117,15 @@ MonitovoPDF/
 | Runtime | .NET 10 (`net10.0`) |
 | Web framework | ASP.NET Core minimal APIs |
 | PDF engine | PDFsharp 6.2.4 (MIT, verified upstream) |
+| Barcodes | ZXing.Net 0.16.11 (Apache-2.0, no transitive dependencies) |
 | Tests | xUnit, with `Microsoft.AspNetCore.Mvc.Testing` for the HTTP surface |
 | CI | **Not yet set up** |
 | Licence | MIT |
 
-Dependencies are deliberately few: PDFsharp is the only runtime package.
+Dependencies are deliberately few: PDFsharp and ZXing.Net are the only runtime packages, and
+neither brings transitive dependencies. Before adding a third, read the copyleft section of
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) — a permissive package can sit on a
+restrictively licensed one, and the badge shows only the top layer.
 
 ---
 
@@ -121,7 +134,7 @@ Dependencies are deliberately few: PDFsharp is the only runtime package.
 ```bash
 cd c:\dev\MonitovoPDF
 dotnet build          # currently 0 warnings, 0 errors
-dotnet test           # currently 27 passing
+dotnet test           # currently 57 passing
 dotnet run            # listens on http://localhost:5155
 curl http://localhost:5155/health
 ```

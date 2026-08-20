@@ -67,14 +67,14 @@ app.MapPost("/v1/labels", async (
         // rather than aborting the work. The real defence against a pathological template is the
         // input size and page-count ceilings applied above.
         var render = Task.Run(
-            () => renderer.Render(decoded.Template, decoded.Text, decoded.Images),
+            () => renderer.Render(decoded.Template, decoded.Text, decoded.Images, decoded.Barcodes),
             cancellationToken);
 
         var pdf = await render.WaitAsync(timeout, cancellationToken);
 
         logger.LogInformation(
             "Rendered a label from a {TemplateBytes} byte template into {PdfBytes} bytes across {FieldCount} field(s).",
-            decoded.Template.Length, pdf.Length, decoded.Text.Count + decoded.Images.Count);
+            decoded.Template.Length, pdf.Length, decoded.Text.Count + decoded.Images.Count + decoded.Barcodes.Count);
 
         return Results.File(pdf, "application/pdf", "label.pdf");
     }

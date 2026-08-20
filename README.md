@@ -57,8 +57,10 @@ Fills a template and returns the finished document as `application/pdf`.
     "description": "Stainless bracket, 40mm"
   },
   "images": {
-    "barcode": "<base64-encoded PNG>",
     "logo": "<base64-encoded PNG>"
+  },
+  "barcodes": {
+    "barcode": { "type": "code128", "value": "WIDGET-4471" }
   }
 }
 ```
@@ -67,10 +69,11 @@ Fills a template and returns the finished document as `application/pdf`.
   travels with each request and stays wherever you already keep it.
 * `fields` — text values, keyed by the name of the template field to draw them into.
 * `images` — images, base64 encoded, keyed by the name of the template field to draw them into.
+* `barcodes` — barcodes for the service to generate, keyed the same way.
 
 Every named field must exist in the template. If any name is unknown the whole request fails with
 `400` rather than returning a partly populated document, and the response names the fields at
-fault. A field given both a text and an image value is rejected for the same reason.
+fault. A field given more than one value is rejected for the same reason.
 
 Text is drawn at the size the template field asks for in its default-appearance string, and shrunk
 to fit if the value is too wide, down to the configured floor. Images are scaled to fit their
@@ -78,6 +81,45 @@ field and centred, preserving aspect ratio.
 
 Sending the result to a printer is the caller's job. The service returns bytes and never reaches
 out to the network.
+
+### Barcodes
+
+Barcodes are drawn as **vector** graphics rather than rasterised, so the bar edges stay exact at
+any print resolution. A scaled bitmap can blur enough at a label printer's resolution to cost a
+scan. Linear symbologies fill their field; 2D symbologies are fitted and centred, keeping their
+aspect ratio. The quiet zone is included in the symbol, so the template author does not have to
+leave room for it around the field.
+
+| `type` | Symbology | Accepts |
+|---|---|---|
+| `code128` | Code 128 | full ASCII |
+| `code39` | Code 39 | uppercase, digits, `- . $ / + %`, space |
+| `code93` | Code 93 | uppercase, digits, some punctuation |
+| `codabar` | Codabar | digits, with `A`–`D` start/stop characters |
+| `itf` | Interleaved 2 of 5 | digits, even count |
+| `ean13` | EAN-13 | 12 or 13 digits |
+| `ean8` | EAN-8 | 7 or 8 digits |
+| `upca` | UPC-A | 11 or 12 digits |
+| `upce` | UPC-E | 7 or 8 digits |
+| `msi` | MSI | digits |
+| `plessey` | Plessey | digits |
+| `qr` | QR Code | any text |
+| `datamatrix` | Data Matrix | any text |
+| `aztec` | Aztec | any text |
+| `pdf417` | PDF417 | any text |
+
+A value the symbology cannot represent is rejected with `400` and an explanation — several are
+digits-only, and the retail symbologies require an exact length.
+
+Every symbology except MSI and Plessey is verified end to end by the integration suite: rendered,
+rasterised, and read back by an independent decoder that must agree on both the symbology and the
+value. MSI and Plessey encode and render, but no freely available decoder in the test image can
+read them, so they are not scan-verified. Confirm them against your own scanners before relying
+on them.
+
+If you need a symbology that is not listed, or a check digit computed for you, generate the image
+yourself and send it in `images` instead. The service does not compute check digits: a value is
+encoded as given.
 
 ### `GET /health`
 
@@ -166,8 +208,10 @@ approach can be discussed before you spend time on it.
 
 ## License
 
-Released under the [MIT License](LICENSE). The only runtime dependency is
-[PDFsharp](https://github.com/empira/PDFsharp), which is also MIT licensed.
+Released under the [MIT License](LICENSE). The runtime dependencies are
+[PDFsharp](https://github.com/empira/PDFsharp) (MIT) for the PDF work and
+[ZXing.Net](https://github.com/micjahn/ZXing.Net) (Apache-2.0) for barcode encoding. Neither is
+copyleft, and neither brings dependencies of its own.
 
 Third-party works redistributed with the service, and their licences in full, are listed in
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). That file is copied into the container image,

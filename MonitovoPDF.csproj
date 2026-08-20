@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <PackageReference Include="PDFsharp" Version="6.2.4" />
+    <PackageReference Include="ZXing.Net" Version="0.16.11" />
   </ItemGroup>
 
 </Project>

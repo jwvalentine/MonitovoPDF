@@ -5,6 +5,8 @@ using PdfSharp.Pdf;
 using PdfSharp.Pdf.AcroForms;
 using PdfSharp.Pdf.Advanced;
 using PdfSharp.Pdf.IO;
+using ZXing;
+using ZXing.Common;
 
 namespace MonitovoPDF.Rendering;
 
@@ -33,8 +35,11 @@ public sealed class LabelRenderer(IOptions<RenderingOptions> options, ILogger<La
     public byte[] Render(
         byte[] templateBytes,
         IReadOnlyDictionary<string, string> textValues,
-        IReadOnlyDictionary<string, byte[]> imageValues)
+        IReadOnlyDictionary<string, byte[]> imageValues,
+        IReadOnlyDictionary<string, BarcodeContent>? barcodeValues = null)
     {
+        barcodeValues ??= new Dictionary<string, BarcodeContent>();
+
         using var input = new MemoryStream(templateBytes, writable: false);
 
         PdfDocument document;
@@ -67,6 +72,7 @@ public sealed class LabelRenderer(IOptions<RenderingOptions> options, ILogger<La
             // whole request rather than leaving a half-populated label.
             var textPlacements = Resolve(textValues.Keys, fields, widgetPages, formAppearance);
             var imagePlacements = Resolve(imageValues.Keys, fields, widgetPages, formAppearance);
+            var barcodePlacements = Resolve(barcodeValues.Keys, fields, widgetPages, formAppearance);
 
             var canvases = new Dictionary<PdfPage, XGraphics>();
             try
@@ -81,6 +87,12 @@ public sealed class LabelRenderer(IOptions<RenderingOptions> options, ILogger<La
                 {
                     foreach (var placement in placements)
                         DrawImage(CanvasFor(placement.Page), placement, imageValues[name], name);
+                }
+
+                foreach (var (name, placements) in barcodePlacements)
+                {
+                    foreach (var placement in placements)
+                        DrawBarcode(CanvasFor(placement.Page), placement, barcodeValues[name], name);
                 }
             }
             finally
@@ -290,6 +302,92 @@ public sealed class LabelRenderer(IOptions<RenderingOptions> options, ILogger<La
             var y = placement.Bounds.Y + ((placement.Bounds.Height - height) / 2);
 
             canvas.DrawImage(image, x, y, width, height);
+        }
+    }
+
+    /// <summary>
+    /// Draws a barcode as vector rectangles rather than as a rasterised image, so the bar edges
+    /// stay exact at any print resolution. A scaled bitmap can blur enough at a label printer's
+    /// resolution to cost a scan.
+    /// </summary>
+    private void DrawBarcode(XGraphics canvas, Placement placement, BarcodeContent content, string fieldName)
+    {
+        BitMatrix matrix;
+        try
+        {
+            var writer = new BarcodeWriterGeneric
+            {
+                Format = content.Symbology.Format,
+                Options = new EncodingOptions
+                {
+                    // Zero asks for the symbol's natural module size rather than a scaled
+                    // bitmap, which keeps the drawing compact and the modules exact.
+                    Width = 0,
+                    Height = 0,
+                    Margin = content.Symbology.QuietZoneModules,
+                    PureBarcode = true,
+                },
+            };
+
+            matrix = writer.Encode(content.Value);
+        }
+        catch (Exception exception)
+        {
+            // The reason is returned to the caller, who supplied the value, but never logged.
+            logger.LogWarning("Rejected a {Symbology} barcode for field {FieldName}: {Reason}.",
+                content.Symbology.Name, fieldName, exception.GetType().Name);
+
+            throw new TemplateRenderException(
+                $"The value for field '{fieldName}' is not valid for {content.Symbology.Name}: {exception.Message}");
+        }
+
+        var bounds = placement.Bounds;
+
+        if (matrix.Height == 1)
+        {
+            // A linear symbology carries no information vertically, so the bars fill the field.
+            var moduleWidth = bounds.Width / matrix.Width;
+
+            foreach (var (start, length) in RunsIn(matrix, row: 0))
+                canvas.DrawRectangle(XBrushes.Black, bounds.X + (start * moduleWidth), bounds.Y, length * moduleWidth, bounds.Height);
+
+            return;
+        }
+
+        // A 2D symbology must keep its aspect ratio, so it is fitted and centred instead.
+        var module = Math.Min(bounds.Width / matrix.Width, bounds.Height / matrix.Height);
+        var originX = bounds.X + ((bounds.Width - (matrix.Width * module)) / 2);
+        var originY = bounds.Y + ((bounds.Height - (matrix.Height * module)) / 2);
+
+        for (var y = 0; y < matrix.Height; y++)
+        {
+            foreach (var (start, length) in RunsIn(matrix, y))
+            {
+                // A hair of overlap stops rasterisers drawing seams between adjacent modules.
+                canvas.DrawRectangle(XBrushes.Black,
+                    originX + (start * module), originY + (y * module),
+                    length * module, module * 1.02);
+            }
+        }
+    }
+
+    /// <summary>Yields the runs of set modules in one row, as (start, length) pairs.</summary>
+    private static IEnumerable<(int Start, int Length)> RunsIn(BitMatrix matrix, int row)
+    {
+        var x = 0;
+        while (x < matrix.Width)
+        {
+            if (!matrix[x, row])
+            {
+                x++;
+                continue;
+            }
+
+            var start = x;
+            while (x < matrix.Width && matrix[x, row])
+                x++;
+
+            yield return (start, x - start);
         }
     }
 

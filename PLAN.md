@@ -99,6 +99,34 @@ needing different typefaces overrides the directory and mounts its own.
 Note that DejaVu's file names — `DejaVuSans.ttf`, `DejaVuSans-Bold.ttf` — happen to match the
 face-name convention the resolver expects, which is why no mapping configuration is needed.
 
+## Decision 7 — Barcode generation — **DECIDED: generate them in the service**
+
+Callers originally had to supply a barcode as an image. The service now generates them from a
+`barcodes` map instead, using **ZXing.Net** (Apache-2.0, verified upstream). The `images` path
+remains for anything not covered.
+
+Two reasons. A caller-supplied bitmap is rasterised and then scaled into the field, which can
+blur at label-printer resolution and cost a scan; drawing the symbol as vector rectangles keeps
+the edges exact at any resolution. And ZXing includes the quiet zone in the symbol, so a template
+author no longer has to leave room for it around the field.
+
+ZXing.Net's core package was chosen specifically because it has **no transitive dependencies**
+and no imaging layer — it returns a bit matrix that this project draws itself. The alternatives
+were rejected: NetBarcode is MIT but sits on SixLabors.ImageSharp, which is revenue-gated and now
+enforces with licence keys; BarcodeLib drags in SkiaSharp's native binaries.
+
+Apache-2.0 is permissive and imposes nothing on this project, which stays MIT. The one accepted
+cost is that Apache-2.0 is incompatible with GPLv2, so a GPLv2 project could not incorporate
+MonitovoPDF. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
+Fifteen symbologies are exposed. Thirteen are verified end to end by decoding the rendered PDF
+with independent decoders that must agree on both symbology and value. MSI and Plessey encode and
+render but no freely available decoder can read them, so they are documented as unverified rather
+than quietly presented as tested.
+
+The service does **not** compute check digits. A value is encoded as given, so GS1 and ITF-14
+callers must supply a correct one. Worth revisiting if it trips people up.
+
 ---
 
 ## Rough Phasing
@@ -113,3 +141,4 @@ face-name convention the resolver expects, which is why no mapping configuration
   for template authors — most usefully an endpoint that lists the fields a template defines.
 * **Phase 4 — Release.** Versioning policy, published artefacts, contribution guide, security
   disclosure policy.
+

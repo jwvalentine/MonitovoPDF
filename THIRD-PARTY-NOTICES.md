@@ -44,6 +44,27 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
+### ZXing.Net 0.16.11 — Apache License 2.0
+
+The barcode encoder. Referenced as a NuGet package; its source is not incorporated into this
+repository. Only the core package is used, which has no dependencies of its own and no
+imaging layer — it returns a bit matrix that this project draws as vector rectangles.
+<https://github.com/micjahn/ZXing.Net>
+
+Apache 2.0 is permissive and imposes no copyleft. It is not the same licence as this
+project's, and it does not need to be: the package is a separate work, referenced rather
+than incorporated, so MonitovoPDF remains MIT. Its obligations here are to include a copy of
+the licence and to retain notices. The full licence text is at
+[licenses/Apache-2.0.txt](licenses/Apache-2.0.txt), which is copied into the container image.
+
+The package ships no `NOTICE` file, so clause 4(d) does not apply. This project does not
+modify the package, so clause 4(b) does not apply either.
+
+One consequence worth recording: Apache 2.0 is compatible with GPLv3 but **not** with
+GPLv2. A downstream project under GPLv2 could not incorporate MonitovoPDF while it carries
+this dependency. That is the only respect in which this addition narrows who can consume the
+project, and it was accepted deliberately.
+
 ### DejaVu fonts — Bitstream Vera Fonts License
 
 Installed in the container image only (Debian package `fonts-dejavu-core`), because
@@ -138,9 +159,11 @@ copyleft obligation on it or on a consumer. The position as audited on 2026-08-2
 
 **No GPL, LGPL or AGPL code is compiled into, linked into, or derived from this project.**
 
-* **Managed dependencies.** The service resolves to exactly two NuGet packages: PDFsharp
-  (MIT) and System.Security.Cryptography.Pkcs (MIT). There is nothing else in the runtime
-  graph.
+* **Managed dependencies.** The service resolves to exactly three NuGet packages: PDFsharp
+  (MIT), ZXing.Net (Apache-2.0) and System.Security.Cryptography.Pkcs (MIT). There is
+  nothing else in the runtime graph — ZXing.Net's core package brings no dependencies of its
+  own, which is why it was chosen over barcode libraries that pull in an imaging stack.
+  Apache-2.0 is permissive, not copyleft.
 * **Native linkage.** The service process links only against glibc (`libc`, `libdl`,
   `libm`, `libpthread`, `librt`, `ld-linux`) and the GCC runtime (`libstdc++`, `libgcc_s`).
   glibc is LGPL-2.1, which permits dynamic linking without any reciprocal obligation. The

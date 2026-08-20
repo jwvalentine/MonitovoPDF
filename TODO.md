@@ -17,6 +17,12 @@ Last reviewed: 2026-08-19
       end to end in Docker and read back with poppler, but nothing has been sent to an actual label
       printer. That is the last unverified link in the chain.
 - [ ] Enable Dependabot for NuGet and GitHub Actions.
+- [ ] **Confirm MSI and Plessey against real scanners** if anyone needs them. They render, but no
+      decoder in the integration image can read them, so they are the only symbologies shipped
+      without scan verification. Consider dropping them if nobody does.
+- [ ] Decide whether the service should compute check digits. It currently encodes a value as
+      given, so a GS1 or ITF-14 caller must supply a correct one or get a valid-looking barcode
+      carrying a wrong number.
 
 ## Hardening
 

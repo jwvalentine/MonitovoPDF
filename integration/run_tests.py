@@ -18,6 +18,7 @@ import urllib.error
 import urllib.request
 import zlib
 
+import barcodes
 import make_template
 
 BASE_URL = os.environ.get("MONITOVO_URL", "http://app:8080")
@@ -115,6 +116,65 @@ def extract_text(path):
     return result.stdout
 
 
+def run_barcode_checks():
+    """Renders every supported symbology onto one sheet and reads them back."""
+    print("\nBuilding an all-symbologies template with LibreOffice")
+    sheet_path = os.path.join(OUTPUT_DIR, "barcode-template.pdf")
+    make_template.barcode_sheet(sheet_path, barcodes.NAMES)
+
+    sheet_bytes = open(sheet_path, "rb").read()
+    missing = [n for n in barcodes.NAMES if f"/T({n})".encode() not in sheet_bytes]
+    check("the sheet template defines a field per symbology", not missing, f"missing: {missing}")
+
+    print(f"Rendering all {len(barcodes.NAMES)} symbologies in one request")
+    status, body, content_type = post("/v1/labels", {
+        "template": base64.b64encode(sheet_bytes).decode(),
+        "barcodes": {name: {"type": name, "value": sent} for name, sent, *_ in barcodes.SYMBOLOGIES},
+    })
+
+    check("the barcode sheet renders", status == 200, f"status {status}: {body[:300]!r}")
+    check("the sheet response is a PDF", content_type.startswith("application/pdf"), content_type)
+
+    if status != 200:
+        return
+
+    sheet_out = os.path.join(OUTPUT_DIR, "barcodes.pdf")
+    with open(sheet_out, "wb") as handle:
+        handle.write(body)
+    print(f"        wrote {sheet_out} ({len(body)} bytes)")
+
+    check("the barcode sheet is flat", b"/Widget" not in body)
+    check("barcodes are vectors, not images", b"/XObject" not in body,
+          "an XObject means something was rasterised")
+
+    print("\nDecoding the rendered sheet")
+    images = barcodes.rasterise(sheet_out, os.path.join(OUTPUT_DIR, "sheet"))
+    decoded, tally = barcodes.decode_all(images)
+    print(f"        rasterised {len(images)} page(s); decoders read "
+          + ", ".join(f"{k}={v}" for k, v in tally.items()))
+
+    results, unread = barcodes.verify(decoded)
+    for name, sent, hit in results:
+        if hit:
+            print(f"  PASS  {name} decoded back to \"{sent}\"")
+        elif name in barcodes.NO_DECODER:
+            print(f"  ----  {name} rendered; no decoder here can read it")
+        else:
+            print(f"  FAIL  {name} was not read by any decoder")
+
+    # Everything except the symbologies no available decoder supports must scan.
+    expected_to_decode = [n for n in barcodes.NAMES if n not in barcodes.NO_DECODER]
+    failed = [n for n in expected_to_decode if n in unread]
+    check(f"all {len(expected_to_decode)} decodable symbologies scan back correctly",
+          not failed, f"did not decode: {failed}")
+
+    # Guard the other direction: if a decoder for these ever appears, tighten the exclusion
+    # rather than leaving them silently untested.
+    surprises = [n for n in barcodes.NO_DECODER if n not in unread]
+    check("the undecodable list is still accurate", not surprises,
+          f"now decodable, remove from NO_DECODER: {surprises}")
+
+
 def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     template_path = os.path.join(OUTPUT_DIR, "template.pdf")
@@ -195,6 +255,8 @@ def main():
         "images": {"part_number": barcode_b64},
     })
     check("a field given both text and an image is rejected", status == 400, f"status {status}")
+
+    run_barcode_checks()
 
     print()
     if failures:

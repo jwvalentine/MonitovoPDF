@@ -105,7 +105,7 @@ public class RenderLabelRequestDecoderTests
             out var errors);
 
         Assert.False(accepted);
-        Assert.Contains(errors, error => error.Contains("both", StringComparison.Ordinal));
+        Assert.Contains(errors, error => error.Contains("more than one value", StringComparison.Ordinal));
     }
 
     [Theory]

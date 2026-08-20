@@ -217,15 +217,5 @@ public class LabelRendererTests
     }
 
     /// <summary>Decompresses the first page's content stream so drawn text can be asserted on.</summary>
-    private static string ReadPageContent(byte[] pdf)
-    {
-        using var stream = new MemoryStream(pdf);
-        using var document = PdfReader.Open(stream, PdfDocumentOpenMode.Modify);
-
-        var builder = new StringBuilder();
-        foreach (var content in document.Pages[0].Contents)
-            builder.Append(Encoding.Latin1.GetString(content.Stream.UnfilteredValue));
-
-        return builder.ToString();
-    }
+    private static string ReadPageContent(byte[] pdf) => PdfContent.OfFirstPage(pdf);
 }
