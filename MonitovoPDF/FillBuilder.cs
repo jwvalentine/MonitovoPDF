@@ -15,6 +15,7 @@ public sealed class FillBuilder
     private readonly Dictionary<string, TextContent> _text = new(StringComparer.Ordinal);
     private readonly Dictionary<string, byte[]> _images = new(StringComparer.Ordinal);
     private readonly Dictionary<string, BarcodeContent> _barcodes = new(StringComparer.Ordinal);
+    private readonly Dictionary<(int Page, int Index), ImageSlotContent> _slots = [];
 
     internal IReadOnlyDictionary<string, TextContent> Text => _text;
 
@@ -22,7 +23,9 @@ public sealed class FillBuilder
 
     internal IReadOnlyDictionary<string, BarcodeContent> Barcodes => _barcodes;
 
-    internal int Count => _text.Count + _images.Count + _barcodes.Count;
+    internal IReadOnlyDictionary<(int Page, int Index), ImageSlotContent> Slots => _slots;
+
+    internal int Count => _text.Count + _images.Count + _barcodes.Count + _slots.Count;
 
     /// <summary>Draws <paramref name="value"/> into the field called <paramref name="field"/>.</summary>
     /// <remarks>
@@ -74,6 +77,78 @@ public sealed class FillBuilder
 
         _barcodes[field] = new BarcodeContent(BarcodeSymbology.For(type), value);
         return this;
+    }
+
+    /// <summary>
+    /// Replaces a page's image placeholder, addressed by its position among the page's images.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// For templates whose placeholders are images rather than form fields. The replacement
+    /// inherits the placeholder's position and size exactly, and is stretched to fill it whatever
+    /// its own proportions — the page's drawing instructions are not altered, only what they draw.
+    /// </para>
+    /// <para>
+    /// Placeholders are numbered from 1, in order of their resource name with embedded numbers
+    /// compared as numbers. <see cref="MonitovoPdf.Inspect(byte[], RenderingOptions?)"/> reports
+    /// the numbering for a given template, which is worth checking rather than assuming.
+    /// </para>
+    /// </remarks>
+    /// <param name="pageNumber">One-based page number.</param>
+    /// <param name="imageIndex">One-based position among that page's image placeholders.</param>
+    /// <param name="image">The replacement image.</param>
+    /// <exception cref="ArgumentOutOfRangeException">A page or index below one.</exception>
+    /// <exception cref="ArgumentException">That placeholder already has a replacement.</exception>
+    public FillBuilder SetImageAt(int pageNumber, int imageIndex, byte[] image)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+        ClaimSlot(pageNumber, imageIndex);
+
+        _slots[(pageNumber, imageIndex)] = new ImageSlotContent(image, null);
+        return this;
+    }
+
+    /// <summary>Replaces a page's image placeholder with an image read from a stream.</summary>
+    public FillBuilder SetImageAt(int pageNumber, int imageIndex, Stream image)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+
+        using var buffer = new MemoryStream();
+        image.CopyTo(buffer);
+
+        return SetImageAt(pageNumber, imageIndex, buffer.ToArray());
+    }
+
+    /// <summary>
+    /// Draws a barcode into a page's image placeholder, addressed by position.
+    /// </summary>
+    /// <remarks>
+    /// The barcode replaces the placeholder as vector graphics rather than as a picture, so its
+    /// edges stay exact at any resolution while still inheriting the placeholder's geometry.
+    /// </remarks>
+    public FillBuilder SetBarcodeAt(int pageNumber, int imageIndex, BarcodeType type, string value)
+    {
+        ClaimSlot(pageNumber, imageIndex);
+
+        if (string.IsNullOrEmpty(value))
+            throw new ArgumentException("A barcode needs a value to encode.", nameof(value));
+
+        _slots[(pageNumber, imageIndex)] =
+            new ImageSlotContent(null, new BarcodeContent(BarcodeSymbology.For(type), value));
+
+        return this;
+    }
+
+    private void ClaimSlot(int pageNumber, int imageIndex)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(pageNumber, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(imageIndex, 1);
+
+        if (_slots.ContainsKey((pageNumber, imageIndex)))
+        {
+            throw new ArgumentException(
+                $"Image {imageIndex} on page {pageNumber} already has a replacement.", nameof(imageIndex));
+        }
     }
 
     private void Claim(string field)

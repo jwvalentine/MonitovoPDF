@@ -19,6 +19,41 @@ public sealed record RenderLabelRequest
 
     /// <summary>Barcodes to generate, keyed by the name of the template field to draw them into.</summary>
     public Dictionary<string, BarcodeRequest>? Barcodes { get; init; }
+
+    /// <summary>Images replacing placeholders addressed by page and position.</summary>
+    public List<ImageAtRequest>? ImagesAt { get; init; }
+
+    /// <summary>Barcodes replacing placeholders addressed by page and position.</summary>
+    public List<BarcodeAtRequest>? BarcodesAt { get; init; }
+}
+
+/// <summary>An image replacing a placeholder addressed by position rather than by field name.</summary>
+public sealed record ImageAtRequest
+{
+    /// <summary>One-based page number.</summary>
+    public int Page { get; init; }
+
+    /// <summary>One-based position among that page's image placeholders.</summary>
+    public int Index { get; init; }
+
+    /// <summary>The replacement image, base64 encoded.</summary>
+    public string? Image { get; init; }
+}
+
+/// <summary>A barcode replacing a placeholder addressed by position.</summary>
+public sealed record BarcodeAtRequest
+{
+    /// <summary>One-based page number.</summary>
+    public int Page { get; init; }
+
+    /// <summary>One-based position among that page's image placeholders.</summary>
+    public int Index { get; init; }
+
+    /// <summary>Symbology name, such as "code128".</summary>
+    public string? Type { get; init; }
+
+    /// <summary>The content to encode.</summary>
+    public string? Value { get; init; }
 }
 
 /// <summary>A barcode the service should generate rather than the caller supplying an image.</summary>
@@ -35,11 +70,15 @@ public sealed record BarcodeRequest
 public sealed record BarcodeSpec(BarcodeType Type, string Value);
 
 /// <summary>A request that has passed validation and been decoded.</summary>
+public sealed record SlotSpec(int Page, int Index, byte[]? Image, BarcodeSpec? Barcode);
+
+/// <summary>A request that has passed validation and been decoded.</summary>
 public sealed record DecodedLabelRequest(
     byte[] Template,
     IReadOnlyDictionary<string, string> Text,
     IReadOnlyDictionary<string, byte[]> Images,
-    IReadOnlyDictionary<string, BarcodeSpec> Barcodes);
+    IReadOnlyDictionary<string, BarcodeSpec> Barcodes,
+    IReadOnlyList<SlotSpec> Slots);
 
 public static class RenderLabelRequestDecoder
 {
@@ -117,6 +156,7 @@ public static class RenderLabelRequestDecoder
             return false;
         }
 
+        var slots = new List<SlotSpec>();
         var decodedImages = new Dictionary<string, byte[]>(StringComparer.Ordinal);
         foreach (var (name, value) in images)
         {
@@ -135,10 +175,28 @@ public static class RenderLabelRequestDecoder
             decodedImages[name] = imageBytes;
         }
 
+        foreach (var barcode in request.BarcodesAt ?? [])
+        {
+            if (!BarcodeTypes.TryParse(barcode.Type, out var type))
+                errors.Add($"Image {barcode.Index} on page {barcode.Page} asks for an unknown barcode type '{barcode.Type}'.");
+            else if (string.IsNullOrEmpty(barcode.Value))
+                errors.Add($"The barcode for image {barcode.Index} on page {barcode.Page} has no value.");
+            else
+                slots.Add(new SlotSpec(barcode.Page, barcode.Index, null, new BarcodeSpec(type, barcode.Value)));
+        }
+
+        foreach (var entry in request.ImagesAt ?? [])
+        {
+            if (!TryDecodeBase64(entry.Image ?? "", options.MaxImageBytes, out var bytes))
+                errors.Add($"The image for image {entry.Index} on page {entry.Page} is not valid base64, is empty, or exceeds {options.MaxImageBytes} bytes.");
+            else
+                slots.Add(new SlotSpec(entry.Page, entry.Index, bytes, null));
+        }
+
         if (errors.Count > 0)
             return false;
 
-        decoded = new DecodedLabelRequest(templateBytes, text, decodedImages, decodedBarcodes);
+        decoded = new DecodedLabelRequest(templateBytes, text, decodedImages, decodedBarcodes, slots);
         return true;
     }
 

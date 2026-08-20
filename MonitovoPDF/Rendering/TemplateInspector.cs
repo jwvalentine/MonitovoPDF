@@ -40,15 +40,43 @@ internal static class TemplateInspector
                 numbers[page] = i + 1;
 
                 pages.Add(new TemplatePage(
-                    i + 1, page.Width.Point, page.Height.Point, page.Elements.GetInteger("/Rotate")));
+                    i + 1, page.Width.Point, page.Height.Point, page.Elements.GetInteger("/Rotate"),
+                    DescribeImages(page, i + 1)));
             }
 
-            var fields = document.AcroForm is { } form
+            var fields = LabelRenderer.FormOf(document) is { } form
                 ? Describe(form, numbers)
                 : [];
 
             return new TemplateInfo(pages, fields);
         }
+    }
+
+    /// <summary>
+    /// Reports a page's image placeholders, and where the page draws each of them.
+    /// </summary>
+    /// <remarks>
+    /// The positions come from reading the page's own drawing instructions, which is the only
+    /// place they exist — an image object carries no position. Where that cannot be resolved the
+    /// placeholder is still reported, with no placements, rather than being left out.
+    /// </remarks>
+    private static List<TemplateImage> DescribeImages(PdfPage page, int pageNumber)
+    {
+        var slots = ImageSlots.On(page);
+        if (slots.Count == 0)
+            return [];
+
+        var drawn = PlacedXObjects.On(page);
+
+        return [.. slots.Select(slot => new TemplateImage(
+            slot.Index,
+            slot.ResourceName,
+            slot.PixelWidth,
+            slot.PixelHeight,
+            drawn.TryGetValue(slot.ResourceName, out var rectangles)
+                ? [.. rectangles.Select(rectangle => new FieldPlacement(
+                    pageNumber, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height))]
+                : []))];
     }
 
     private static List<TemplateField> Describe(PdfAcroForm form, Dictionary<PdfPage, int> pageNumbers)

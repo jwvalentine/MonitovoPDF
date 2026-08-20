@@ -31,7 +31,7 @@ action items.
 **The library is built, tested and packs.** `MonitovoPdf.Fill(template, fill => ...)` draws text,
 images and barcodes into the positions the template's form fields occupy, strips the fields, and
 returns a flat PDF. It targets `net8.0` and `net10.0`, and `dotnet pack` produces a package that
-has been verified by consuming it from a separate .NET 8 application. 122 tests cover the public
+has been verified by consuming it from a separate .NET 8 application. 137 tests cover the public
 API (pinned by an approval baseline), the renderer, the request decoder and the HTTP surface.
 
 Barcodes are generated in 15 symbologies — see [BarcodeType.cs](MonitovoPDF/BarcodeType.cs) —
@@ -101,6 +101,9 @@ MonitovoPDF/
 │   │   ├── RenderingOptions.cs       # Ceilings and defaults (public, plain object)
 │   │   ├── BarcodeSymbology.cs       # Symbology to encoder mapping
 │   │   ├── TemplateInspector.cs      # Reads pages and fields without filling
+│   │   ├── ImageSlots.cs             # Finds and replaces image placeholders
+│   │   ├── PlacedXObjects.cs         # Reads where a page draws each XObject
+│   │   ├── BarcodeForm.cs            # A barcode as a form XObject on the unit square
 │   │   ├── FileSystemFontResolver.cs # Loads .ttf files from a directory
 │   │   ├── BundledFontResolver.cs    # Serves the embedded font from memory
 │   │   └── TemplateRenderException.cs # Public; the exception to catch
@@ -156,7 +159,7 @@ restrictively licensed one, and the badge shows only the top layer.
 ```bash
 cd c:\dev\MonitovoPDF
 dotnet build          # currently 0 warnings, 0 errors
-dotnet test           # currently 122 passing
+dotnet test           # currently 137 passing
 dotnet pack MonitovoPDF/MonitovoPDF.csproj -c Release -o artifacts   # 0.1.0-preview.1
 dotnet run --project MonitovoPDF.Server   # optional host, http://localhost:5155
 curl http://localhost:5155/health

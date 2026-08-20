@@ -291,3 +291,37 @@ to fit height as well as width, and clips at the bottom edge rather than drawing
 One discovery worth recording: **reading a text field constructs a font inside the PDF engine**, so
 even `Inspect`, which draws nothing, fails on a host with no fonts. It configures fonts the same
 way a fill does.
+
+## Decision 13 — Placeholders that are images — **DECIDED: address them by position**
+
+Not every template marks its placeholders with form fields. A large class uses ordinary image
+XObjects instead: the page draws an image at a fixed spot, and filling means exchanging that image
+for another. Templates of that shape are frequently customer-owned or contractually fixed, so
+re-authoring them is not available to whoever has to fill them.
+
+`SetImageAt` and `SetBarcodeAt` address a placeholder by page and position. Only the image object
+is exchanged; the page's drawing instructions are untouched, so the replacement inherits the
+placeholder's position and size exactly and is stretched to fill it whatever its own proportions.
+Placeholders that were not addressed are left completely alone.
+
+**Ordering is the whole risk.** A PDF resource dictionary has no key order, so an ordinal means
+nothing unless the ordering rule is ours, stated, and invariant. Placeholders are numbered by
+resource name with embedded numbers compared numerically, so `/Im2` precedes `/Im10`. Getting this
+wrong does not fail: it swaps one placeholder's content with another's and the document still
+renders, which is why `Inspect` reports the numbering rather than leaving callers to infer it.
+
+A barcode becomes a **form XObject on the unit square** rather than a picture. A page draws an
+image by mapping the unit square onto wherever it belongs, and a form with that same bounding box
+is drawn by the same operator under the same transform — so the geometry is inherited while the
+bars stay vector. Substituting a raster would fix the resolution at the moment of filling, and a
+barcode resampled on its way to a printer is a barcode that stops scanning.
+
+Two things this forced, both improvements in their own right: a template whose placeholders are all
+images has no interactive form, so requiring one was wrong and now only applies to callers naming a
+field; and the engine *throws* rather than returning null for a document with no form, despite its
+type promising otherwise, so the absence has to be caught rather than tested for.
+
+The alternative considered was addressing by resource name, which is stabler. It was rejected as
+the primary form because the templates this exists for were authored against ordinals, and a
+migration that requires re-authoring the templates defeats the purpose. Name-based addressing
+remains available to add if a case for it appears.

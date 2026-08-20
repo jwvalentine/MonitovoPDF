@@ -54,13 +54,15 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
     /// the same name and returns the finished document.
     /// </summary>
     /// <exception cref="TemplateRenderException">The template or the requested fields are unusable.</exception>
-    public (byte[] Pdf, IReadOnlyList<string> Unmatched) Render(
+    public (byte[] Pdf, IReadOnlyList<string> Unmatched, IReadOnlyList<ImageSlotReference> UnmatchedImages) Render(
         byte[] templateBytes,
         IReadOnlyDictionary<string, TextContent> textValues,
         IReadOnlyDictionary<string, byte[]> imageValues,
-        IReadOnlyDictionary<string, BarcodeContent>? barcodeValues = null)
+        IReadOnlyDictionary<string, BarcodeContent>? barcodeValues = null,
+        IReadOnlyDictionary<(int Page, int Index), ImageSlotContent>? slotValues = null)
     {
         barcodeValues ??= new Dictionary<string, BarcodeContent>();
+        slotValues ??= new Dictionary<(int, int), ImageSlotContent>();
 
         using var input = new MemoryStream(templateBytes, writable: false);
 
@@ -82,19 +84,34 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
                     $"The template has {document.PageCount} pages, which exceeds the limit of {_options.MaxPages}.");
             }
 
-            var form = document.AcroForm
-                ?? throw new TemplateRenderException("The template defines no form fields to fill.");
+            var addressesFields =
+                textValues.Count > 0 || imageValues.Count > 0 || barcodeValues.Count > 0;
 
-            var fields = FlattenFields(form);
-            var widgetPages = MapWidgetsToPages(document);
-            var formAppearance = form.Elements.GetString("/DA");
+            // A template whose placeholders are all images has no form, and that is only a problem
+            // for a caller who asked for a field by name.
+            var form = FormOf(document);
+            if (form is null && addressesFields)
+                throw new TemplateRenderException("The template defines no form fields to fill.");
 
-            // Resolve every requested field before drawing anything, so an unknown name fails the
-            // whole request rather than leaving a half-populated label.
             var unmatched = new List<string>();
-            var textPlacements = Resolve(textValues.Keys, fields, widgetPages, form, formAppearance, unmatched);
-            var imagePlacements = Resolve(imageValues.Keys, fields, widgetPages, form, formAppearance, unmatched);
-            var barcodePlacements = Resolve(barcodeValues.Keys, fields, widgetPages, form, formAppearance, unmatched);
+            var unmatchedImages = new List<ImageSlotReference>();
+
+            var textPlacements = new Dictionary<string, IReadOnlyList<Placement>>(StringComparer.Ordinal);
+            var imagePlacements = new Dictionary<string, IReadOnlyList<Placement>>(StringComparer.Ordinal);
+            var barcodePlacements = new Dictionary<string, IReadOnlyList<Placement>>(StringComparer.Ordinal);
+
+            if (form is not null)
+            {
+                var fields = FlattenFields(form);
+                var widgetPages = MapWidgetsToPages(document);
+                var formAppearance = form.Elements.GetString("/DA");
+
+                // Resolve every requested field before drawing anything, so an unknown name fails
+                // the whole request rather than leaving a half-populated document.
+                textPlacements = Resolve(textValues.Keys, fields, widgetPages, form, formAppearance, unmatched);
+                imagePlacements = Resolve(imageValues.Keys, fields, widgetPages, form, formAppearance, unmatched);
+                barcodePlacements = Resolve(barcodeValues.Keys, fields, widgetPages, form, formAppearance, unmatched);
+            }
 
             var canvases = new Dictionary<PdfPage, XGraphics>();
             try
@@ -123,11 +140,16 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
                     canvas.Dispose();
             }
 
-            RemoveFormFields(document, form);
+            // Placeholder replacement happens after drawing, and touches only the resource
+            // dictionary: the page's own instructions decide where the replacement lands.
+            ReplaceImageSlots(document, slotValues, unmatchedImages);
+
+            if (form is not null)
+                RemoveFormFields(document, form);
 
             using var output = new MemoryStream();
             document.Save(output, closeStream: false);
-            return (output.ToArray(), unmatched);
+            return (output.ToArray(), unmatched, unmatchedImages);
 
             XGraphics CanvasFor(PdfPage page)
             {
@@ -602,6 +624,26 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
     }
 
     /// <summary>
+    /// Returns the document's interactive form, or null when it has none.
+    /// </summary>
+    /// <remarks>
+    /// The engine throws rather than returning null for a document without a form, and its type
+    /// says the value is never null, so the absence has to be caught rather than tested for. A
+    /// template whose placeholders are all images legitimately has no form.
+    /// </remarks>
+    internal static PdfAcroForm? FormOf(PdfDocument document)
+    {
+        try
+        {
+            return document.AcroForm;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Collects every field by name. A name maps to a list, not a single field, because a template
     /// may define the same name more than once and a value is meant to reach all of them.
     /// </summary>
@@ -661,6 +703,86 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
         }
 
         return map;
+    }
+
+    /// <summary>
+    /// Swaps replacements into the image placeholders that were addressed, leaving the rest of the
+    /// page exactly as the template had it.
+    /// </summary>
+    /// <remarks>
+    /// Placeholders that were not addressed are not touched at all — templates routinely carry
+    /// fixed artwork in the slots a caller has no interest in, and rewriting those would be a
+    /// change nobody asked for.
+    /// </remarks>
+    private void ReplaceImageSlots(
+        PdfDocument document,
+        IReadOnlyDictionary<(int Page, int Index), ImageSlotContent> slots,
+        List<ImageSlotReference> unmatched)
+    {
+        if (slots.Count == 0)
+            return;
+
+        var byPage = slots.GroupBy(entry => entry.Key.Page).OrderBy(group => group.Key);
+
+        foreach (var group in byPage)
+        {
+            var available = group.Key >= 1 && group.Key <= document.PageCount
+                ? ImageSlots.On(document.Pages[group.Key - 1])
+                : [];
+
+            foreach (var (key, content) in group.OrderBy(entry => entry.Key.Index))
+            {
+                var slot = available.FirstOrDefault(candidate => candidate.Index == key.Index);
+                var description = $"image {key.Index} on page {key.Page}";
+
+                if (slot is null)
+                {
+                    if (_options.OnMissingField == MissingFieldBehaviour.Throw)
+                    {
+                        throw new TemplateRenderException(
+                            $"The template has no {description}; that page has "
+                            + $"{available.Count} image placeholder(s). Set RenderingOptions."
+                            + "OnMissingField to Ignore to skip it instead.");
+                    }
+
+                    unmatched.Add(new ImageSlotReference(key.Page, key.Index));
+                    continue;
+                }
+
+                var page = document.Pages[key.Page - 1];
+
+                ImageSlots.Replace(page, slot, content.Barcode is { } barcode
+                    ? BarcodeForm.Build(document, barcode, description)
+                    : BuildImage(document, content.Image!, description));
+            }
+        }
+    }
+
+    /// <summary>Turns supplied bytes into an image object the page can draw.</summary>
+    private static PdfDictionary BuildImage(PdfDocument document, byte[] bytes, string description)
+    {
+        using var stream = new MemoryStream(bytes, writable: false);
+
+        XImage image;
+        try
+        {
+            image = XImage.FromStream(stream);
+        }
+        catch (Exception exception)
+        {
+            throw new TemplateRenderException(
+                $"The image supplied for {description} could not be decoded.", exception);
+        }
+
+        using (image)
+        {
+            // An image object standing in for an image object: the page keeps drawing an image,
+            // exactly as the template intended, and the engine handles the encoding.
+            var replacement = new PdfImage(document, image);
+            document.Internals.AddObject(replacement);
+
+            return replacement;
+        }
     }
 
     /// <summary>
