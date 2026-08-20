@@ -138,3 +138,32 @@ def verify(decoded_pairs):
             unread.append(name)
 
     return results, unread
+
+
+def rasterise_with_pdfium(pdf_path, out_prefix, dpi=300):
+    """Renders the PDF to PNG pages with PDFium rather than poppler.
+
+    Two renderers rather than one because they are genuinely different implementations, and a
+    document that comes out right under poppler but wrong under PDFium is a real defect that a
+    single renderer would hide. PDFium is also what a great many viewers and print paths use.
+    """
+    import pypdfium2
+
+    directory = os.path.dirname(pdf_path)
+    prefix = os.path.basename(out_prefix)
+    for stale in os.listdir(directory):
+        if stale.startswith(prefix) and stale.endswith(".png"):
+            os.remove(os.path.join(directory, stale))
+
+    written = []
+    document = pypdfium2.PdfDocument(pdf_path)
+    try:
+        for index, page in enumerate(document):
+            image = page.render(scale=dpi / 72).to_pil()
+            path = os.path.join(directory, f"{prefix}-{index + 1}.png")
+            image.save(path)
+            written.append(path)
+    finally:
+        document.close()
+
+    return sorted(written)

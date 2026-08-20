@@ -31,7 +31,7 @@ action items.
 **The library is built, tested and packs.** `MonitovoPdf.Fill(template, fill => ...)` draws text,
 images and barcodes into the positions the template's form fields occupy, strips the fields, and
 returns a flat PDF. It targets `net8.0` and `net10.0`, and `dotnet pack` produces a package that
-has been verified by consuming it from a separate .NET 8 application. 96 tests cover the public
+has been verified by consuming it from a separate .NET 8 application. 122 tests cover the public
 API (pinned by an approval baseline), the renderer, the request decoder and the HTTP surface.
 
 Barcodes are generated in 15 symbologies — see [BarcodeType.cs](MonitovoPDF/BarcodeType.cs) —
@@ -93,10 +93,14 @@ MonitovoPDF/
 │   ├── FillBuilder.cs                # Collects the values to draw
 │   ├── BarcodeType.cs                # Public symbology enum
 │   ├── BarcodeTypes.cs               # Name <-> type mapping for config-driven callers
+│   ├── TemplateInfo.cs               # What Inspect reports back
+│   ├── TextOptions.cs                # Per-field appearance overrides
+│   ├── FillResult.cs                 # Fill output plus unmatched field names
 │   ├── Rendering/                    # All internal
 │   │   ├── LabelRenderer.cs          # The core: draws values in, strips the form
 │   │   ├── RenderingOptions.cs       # Ceilings and defaults (public, plain object)
 │   │   ├── BarcodeSymbology.cs       # Symbology to encoder mapping
+│   │   ├── TemplateInspector.cs      # Reads pages and fields without filling
 │   │   ├── FileSystemFontResolver.cs # Loads .ttf files from a directory
 │   │   ├── BundledFontResolver.cs    # Serves the embedded font from memory
 │   │   └── TemplateRenderException.cs # Public; the exception to catch
@@ -111,7 +115,7 @@ MonitovoPDF/
 │   ├── make_template.py              # Builds AcroForm templates through the UNO API
 │   ├── barcodes.py                   # All-symbologies sheet, and decoding it back
 │   ├── run_tests.py                  # Drives the service and inspects the results
-│   ├── Dockerfile                    # LibreOffice + poppler + zbar, libdmtx, zxing-cpp
+│   ├── Dockerfile                    # LibreOffice, poppler + PDFium, zbar, libdmtx, zxing-cpp
 │   └── docker-compose.yml            # Runs the service and the check together
 ├── Dockerfile                        # Image for the server; installs DejaVu so text can draw
 ├── licenses/Apache-2.0.txt           # Ships in the package and the image, for ZXing.Net
@@ -152,7 +156,7 @@ restrictively licensed one, and the badge shows only the top layer.
 ```bash
 cd c:\dev\MonitovoPDF
 dotnet build          # currently 0 warnings, 0 errors
-dotnet test           # currently 96 passing
+dotnet test           # currently 122 passing
 dotnet pack MonitovoPDF/MonitovoPDF.csproj -c Release -o artifacts   # 0.1.0-preview.1
 dotnet run --project MonitovoPDF.Server   # optional host, http://localhost:5155
 curl http://localhost:5155/health

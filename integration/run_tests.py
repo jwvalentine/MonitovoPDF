@@ -148,12 +148,26 @@ def run_barcode_checks():
     check("barcodes are vectors, not images", b"/XObject" not in body,
           "an XObject means something was rasterised")
 
-    print("\nDecoding the rendered sheet")
-    images = barcodes.rasterise(sheet_out, os.path.join(OUTPUT_DIR, "sheet"))
-    decoded, tally = barcodes.decode_all(images)
-    print(f"        rasterised {len(images)} page(s); decoders read "
-          + ", ".join(f"{k}={v}" for k, v in tally.items()))
+    # Rasterise with two independent renderers. A symbol that decodes under one and not the other
+    # is a real defect, and a single renderer would hide it.
+    per_renderer = {}
+    for renderer, rasterise in (("poppler", barcodes.rasterise),
+                                ("pdfium", barcodes.rasterise_with_pdfium)):
+        print(f"\nDecoding the rendered sheet, rasterised by {renderer}")
+        images = rasterise(sheet_out, os.path.join(OUTPUT_DIR, f"sheet-{renderer}"))
+        decoded, tally = barcodes.decode_all(images)
+        per_renderer[renderer] = decoded
+        print(f"        {len(images)} page(s); decoders read "
+              + ", ".join(f"{k}={v}" for k, v in tally.items()))
 
+    for renderer, decoded in per_renderer.items():
+        _, unread_here = barcodes.verify(decoded)
+        expected_here = [n for n in barcodes.NAMES if n not in barcodes.NO_DECODER]
+        failed_here = [n for n in expected_here if n in unread_here]
+        check(f"every decodable symbology scans when rasterised by {renderer}",
+              not failed_here, f"did not decode: {failed_here}")
+
+    decoded = set().union(*per_renderer.values())
     results, unread = barcodes.verify(decoded)
     for name, sent, hit in results:
         if hit:

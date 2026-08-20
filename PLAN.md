@@ -255,3 +255,39 @@ normally subset to the glyphs the static artwork already uses, so an empty field
 and the very characters being drawn would be missing. There is also a question of whether a font's
 embedding permission extends to authoring new text. Naming the family and letting the deployment
 supply it is both more honest and more useful.
+
+## Decision 12 — What the fill API owes a caller — **DECIDED**
+
+Four additions in v0.2.0, each closing a case where the library was correct in the narrow sense
+and unhelpful in practice.
+
+**A value reaches every field of its name.** A template may show one value in several places, and
+does so in two different shapes: one field with several widget annotations, or separate field
+objects sharing a name. The first already worked; the second kept only one field and silently
+dropped the rest — a document that looks plausible and is missing a value. Both now fill
+everywhere. Related: a kid with no name of its own is a widget, not a child field, and treating it
+as one invented fields the template never contained.
+
+**A missing field can be tolerated, and is always reported.** Failing the whole render on an
+unknown name is right by default, because it usually means the wrong template. But one set of
+values may legitimately feed templates that do not all carry every field, so `OnMissingField`
+relaxes it. What is *not* offered is quiet tolerance: `FillWithReport` returns the names that did
+not land, because ignoring silently turns the wrong template into a plausible wrong document.
+
+**Appearance can be overridden per field, but the template still wins by default.** `TextOptions`
+sets size, family, alignment or wrapping for one value. The default remains what the field asks
+for, because appearance living in the template is what lets whoever designs it change how a
+document looks without a code change. The override is an escape hatch, not the recommended path.
+
+**A template can be read without being filled.** `Inspect` reports page size, rotation, and each
+field's name, kind, placements and requested appearance. It answers "why did nothing appear"
+— nearly always a field named something other than assumed — and lets a caller reject a template
+of the wrong size up front rather than stretching it to fit.
+
+Multiline text was simply broken: a value containing line breaks was drawn as a single run, so the
+extra lines were lost. It now wraps on word boundaries, honours the field's multiline flag, shrinks
+to fit height as well as width, and clips at the bottom edge rather than drawing outside the field.
+
+One discovery worth recording: **reading a text field constructs a font inside the PDF engine**, so
+even `Inspect`, which draws nothing, fails on a host with no fonts. It configures fonts the same
+way a fill does.

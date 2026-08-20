@@ -13,20 +13,12 @@ public class LabelRendererTests
     private static readonly SyntheticTemplate.Field Title = new("title", 10, 60, 190, 90);
     private static readonly SyntheticTemplate.Field Logo = new("logo", 10, 10, 60, 50);
 
-    private static LabelRenderer CreateRenderer(Action<RenderingOptions>? configure = null)
-    {
-        var options = new RenderingOptions();
-        configure?.Invoke(options);
-
-        return new LabelRenderer(options);
-    }
-
     [Fact]
     public void Render_WritesTheTextIntoThePageContent()
     {
         var template = SyntheticTemplate.WithFields(Title);
 
-        var pdf = CreateRenderer().Render(
+        var pdf = TestRender.Fill(
             template,
             new Dictionary<string, string> { ["title"] = "WIDGET-4471" },
             new Dictionary<string, byte[]>());
@@ -41,7 +33,7 @@ public class LabelRendererTests
     {
         var template = SyntheticTemplate.WithFields(Title, Logo);
 
-        var pdf = CreateRenderer().Render(
+        var pdf = TestRender.Fill(
             template,
             new Dictionary<string, string> { ["title"] = "WIDGET-4471" },
             new Dictionary<string, byte[]> { ["logo"] = SyntheticTemplate.SinglePixelPng() });
@@ -74,7 +66,7 @@ public class LabelRendererTests
     {
         var template = SyntheticTemplate.WithFields(Logo);
 
-        var pdf = CreateRenderer().Render(
+        var pdf = TestRender.Fill(
             template,
             new Dictionary<string, string>(),
             new Dictionary<string, byte[]> { ["logo"] = SyntheticTemplate.SinglePixelPng() });
@@ -94,7 +86,7 @@ public class LabelRendererTests
     {
         var template = SyntheticTemplate.WithFields(Title);
 
-        var pdf = CreateRenderer().Render(
+        var pdf = TestRender.Fill(
             template,
             new Dictionary<string, string> { ["title"] = "OK" },
             new Dictionary<string, byte[]>());
@@ -111,7 +103,7 @@ public class LabelRendererTests
         var value = new string('M', 200);
         var options = new RenderingOptions();
 
-        var pdf = CreateRenderer().Render(
+        var pdf = TestRender.Fill(
             template,
             new Dictionary<string, string> { ["title"] = value },
             new Dictionary<string, byte[]>());
@@ -129,7 +121,7 @@ public class LabelRendererTests
     {
         var template = SyntheticTemplate.WithFields(Title);
 
-        var exception = Assert.Throws<TemplateRenderException>(() => CreateRenderer().Render(
+        var exception = Assert.Throws<TemplateRenderException>(() => TestRender.Fill(
             template,
             new Dictionary<string, string> { ["nonexistent"] = "value" },
             new Dictionary<string, byte[]>()));
@@ -143,7 +135,7 @@ public class LabelRendererTests
         var template = SyntheticTemplate.WithFields(Title);
 
         // A partially populated label is worse than a failed request, so nothing is drawn.
-        Assert.Throws<TemplateRenderException>(() => CreateRenderer().Render(
+        Assert.Throws<TemplateRenderException>(() => TestRender.Fill(
             template,
             new Dictionary<string, string> { ["title"] = "WIDGET-4471", ["missing"] = "value" },
             new Dictionary<string, byte[]>()));
@@ -154,7 +146,7 @@ public class LabelRendererTests
     {
         var notAPdf = Encoding.ASCII.GetBytes("this is not a PDF document");
 
-        Assert.Throws<TemplateRenderException>(() => CreateRenderer().Render(
+        Assert.Throws<TemplateRenderException>(() => TestRender.Fill(
             notAPdf,
             new Dictionary<string, string>(),
             new Dictionary<string, byte[]>()));
@@ -165,7 +157,7 @@ public class LabelRendererTests
     {
         var template = SyntheticTemplate.WithFields();
 
-        var exception = Assert.Throws<TemplateRenderException>(() => CreateRenderer().Render(
+        var exception = Assert.Throws<TemplateRenderException>(() => TestRender.Fill(
             template,
             new Dictionary<string, string> { ["title"] = "WIDGET-4471" },
             new Dictionary<string, byte[]>()));
@@ -179,10 +171,10 @@ public class LabelRendererTests
         var template = SyntheticTemplate.WithFields(Title);
 
         var exception = Assert.Throws<TemplateRenderException>(() =>
-            CreateRenderer(options => options.MaxPages = 0).Render(
+            TestRender.Fill(
                 template,
                 new Dictionary<string, string> { ["title"] = "WIDGET-4471" },
-                new Dictionary<string, byte[]>()));
+                options: TestRender.Options(o => o.MaxPages = 0)));
 
         Assert.Contains("pages", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -192,7 +184,7 @@ public class LabelRendererTests
     {
         var template = SyntheticTemplate.WithFields(Logo);
 
-        Assert.Throws<TemplateRenderException>(() => CreateRenderer().Render(
+        Assert.Throws<TemplateRenderException>(() => TestRender.Fill(
             template,
             new Dictionary<string, string>(),
             new Dictionary<string, byte[]> { ["logo"] = [0x00, 0x01, 0x02, 0x03] }));

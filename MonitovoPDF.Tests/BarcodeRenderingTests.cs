@@ -30,18 +30,13 @@ public class BarcodeRenderingTests
         { "pdf417", "WIDGET-4471" },
     };
 
-    private static LabelRenderer CreateRenderer() =>
-        new(new RenderingOptions());
-
     private static byte[] RenderBarcode(string type, string value)
     {
-        Assert.True(BarcodeSymbology.TryParse(type, out var symbology), $"'{type}' is not a known symbology.");
+        Assert.True(BarcodeTypes.TryParse(type, out var symbology), $"'{type}' is not a known symbology.");
 
-        return CreateRenderer().Render(
+        return TestRender.Fill(
             SyntheticTemplate.WithFields(Slot),
-            new Dictionary<string, string>(),
-            new Dictionary<string, byte[]>(),
-            new Dictionary<string, BarcodeContent> { ["barcode"] = new(symbology, value) });
+            barcodes: new Dictionary<string, (BarcodeType, string)> { ["barcode"] = (symbology, value) });
     }
 
     [Theory]
@@ -98,13 +93,12 @@ public class BarcodeRenderingTests
     [Fact]
     public void ABarcodeForAFieldTheTemplateDoesNotDefine_IsRejected()
     {
-        Assert.True(BarcodeSymbology.TryParse("code128", out var symbology));
-
-        var exception = Assert.Throws<TemplateRenderException>(() => CreateRenderer().Render(
+        var exception = Assert.Throws<TemplateRenderException>(() => TestRender.Fill(
             SyntheticTemplate.WithFields(Slot),
-            new Dictionary<string, string>(),
-            new Dictionary<string, byte[]>(),
-            new Dictionary<string, BarcodeContent> { ["nonexistent"] = new(symbology, "X") }));
+            barcodes: new Dictionary<string, (BarcodeType, string)>
+            {
+                ["nonexistent"] = (BarcodeType.Code128, "X"),
+            }));
 
         Assert.Contains("nonexistent", exception.Message, StringComparison.Ordinal);
     }

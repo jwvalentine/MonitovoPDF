@@ -24,16 +24,40 @@ namespace MonitovoPDF
         public static bool TryParse(string name, out BarcodeType type);
         public static string NameOf(BarcodeType type);
     }
+    public sealed class FieldPlacement : IEquatable<FieldPlacement>
+    {
+        public FieldPlacement(int PageNumber, double XPoints, double YPoints, double WidthPoints, double HeightPoints);
+        public double HeightPoints { get; init; }
+        public double WidthPoints { get; init; }
+        public double XPoints { get; init; }
+        public double YPoints { get; init; }
+        public int PageNumber { get; init; }
+    }
     public sealed class FillBuilder
     {
         public FillBuilder SetBarcode(string field, BarcodeType type, string value);
         public FillBuilder SetImage(string field, System.IO.Stream image);
         public FillBuilder SetImage(string field, byte[] image);
-        public FillBuilder SetText(string field, string value);
+        public FillBuilder SetText(string field, string value, TextOptions options = null);
         public FillBuilder();
+    }
+    public sealed class FillResult : IEquatable<FillResult>
+    {
+        public FillResult(byte[] Pdf, System.Collections.Generic.IReadOnlyList<string> UnmatchedFields);
+        public System.Collections.Generic.IReadOnlyList<string> UnmatchedFields { get; init; }
+        public byte[] Pdf { get; init; }
+    }
+    public enum MissingFieldBehaviour
+    {
+        Ignore = 1,
+        Throw = 0,
     }
     public static class MonitovoPdf
     {
+        public static FillResult FillWithReport(byte[] template, Action<FillBuilder> fill, RenderingOptions options = null);
+        public static TemplateInfo Inspect(System.IO.Stream template, RenderingOptions options = null);
+        public static TemplateInfo Inspect(byte[] template, RenderingOptions options = null);
+        public static TemplateInfo InspectFile(string templatePath, RenderingOptions options = null);
         public static byte[] Fill(System.IO.Stream template, Action<FillBuilder> fill, RenderingOptions options = null);
         public static byte[] Fill(byte[] template, Action<FillBuilder> fill, RenderingOptions options = null);
         public static byte[] FillFile(string templatePath, Action<FillBuilder> fill, RenderingOptions options = null);
@@ -44,6 +68,7 @@ namespace MonitovoPDF
     }
     public sealed class RenderingOptions : System.ComponentModel.DataAnnotations.IValidatableObject
     {
+        public MissingFieldBehaviour OnMissingField { get; set; }
         public RenderingOptions();
         public System.Collections.Generic.IEnumerable<System.ComponentModel.DataAnnotations.ValidationResult> Validate(System.ComponentModel.DataAnnotations.ValidationContext validationContext);
         public const string SectionName;
@@ -57,9 +82,60 @@ namespace MonitovoPDF
         public string DefaultFontFamily { get; set; }
         public string FontDirectory { get; set; }
     }
+    public sealed class TemplateField : IEquatable<TemplateField>
+    {
+        public System.Collections.Generic.IReadOnlyList<FieldPlacement> Placements { get; init; }
+        public TemplateField(string Name, TemplateFieldKind Kind, System.Collections.Generic.IReadOnlyList<FieldPlacement> Placements, string FontFamily, double FontSizePoints, TextAlignment Alignment, bool IsMultiline);
+        public TemplateFieldKind Kind { get; init; }
+        public TextAlignment Alignment { get; init; }
+        public bool IsMultiline { get; init; }
+        public double FontSizePoints { get; init; }
+        public string FontFamily { get; init; }
+        public string Name { get; init; }
+    }
+    public enum TemplateFieldKind
+    {
+        Button = 2,
+        Choice = 3,
+        Signature = 4,
+        Text = 1,
+        Unknown = 0,
+    }
+    public sealed class TemplateInfo : IEquatable<TemplateInfo>
+    {
+        public System.Collections.Generic.IReadOnlyList<TemplateField> Fields { get; init; }
+        public System.Collections.Generic.IReadOnlyList<TemplatePage> Pages { get; init; }
+        public System.Collections.Generic.IReadOnlyList<string> FieldNames { get; }
+        public TemplateField Field(string name);
+        public TemplateInfo(System.Collections.Generic.IReadOnlyList<TemplatePage> Pages, System.Collections.Generic.IReadOnlyList<TemplateField> Fields);
+    }
+    public sealed class TemplatePage : IEquatable<TemplatePage>
+    {
+        public TemplatePage(int Number, double WidthPoints, double HeightPoints, int Rotation);
+        public double HeightMillimetres { get; }
+        public double HeightPoints { get; init; }
+        public double WidthMillimetres { get; }
+        public double WidthPoints { get; init; }
+        public int Number { get; init; }
+        public int Rotation { get; init; }
+    }
     public sealed class TemplateRenderException : Exception, System.Runtime.Serialization.ISerializable
     {
         public TemplateRenderException(string message);
         public TemplateRenderException(string message, Exception innerException);
+    }
+    public enum TextAlignment
+    {
+        Centre = 1,
+        Left = 0,
+        Right = 2,
+    }
+    public sealed class TextOptions : IEquatable<TextOptions>
+    {
+        public TextAlignment? Alignment { get; init; }
+        public TextOptions();
+        public bool? Multiline { get; init; }
+        public double? FontSizePoints { get; init; }
+        public string FontFamily { get; init; }
     }
 }

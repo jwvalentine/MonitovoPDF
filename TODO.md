@@ -57,9 +57,10 @@ These cannot be done from the repository, and the release workflow will fail wit
 - [ ] **Confirm MSI and Plessey against real scanners** if anyone needs them. They render, but no
       decoder in the integration image can read them, so they are the only symbologies shipped
       without scan verification. Consider dropping them if nobody does.
-- [ ] Decide whether the library should compute check digits. It currently encodes a value as
-      given, so a GS1 or ITF-14 caller must supply a correct one or get a valid-looking barcode
-      carrying a wrong number.
+- [ ] Decide whether the library should compute **data** check digits. Symbology check characters
+      are already generated as part of the encoding; what is not is the digit belonging to the data
+      — the last digit of an EAN, UPC or GS1 number, or of an ITF-14. A caller who gets it wrong
+      gets a barcode that scans cleanly and carries the wrong number.
 
 ## Hardening
 
@@ -74,8 +75,9 @@ These cannot be done from the repository, and the release workflow will fail wit
 
 ## Usability
 
-- [ ] **Add an endpoint that lists the fields a template defines.** Template authors currently have
-      to guess field names, and a typo only surfaces as a rejected render.
+- [ ] **Expose template inspection over HTTP.** The library reports a template's pages and fields
+      through `Inspect`, which is what a template author needs when a field name turns out not to
+      be what they assumed. The server does not surface it yet.
 - [ ] Add OpenAPI documentation for the HTTP surface.
 - [ ] Consider a `netstandard2.0` target so .NET Framework applications can use the library. Both
       dependencies support it; the blocker is that the code uses .NET 7+ APIs that would need

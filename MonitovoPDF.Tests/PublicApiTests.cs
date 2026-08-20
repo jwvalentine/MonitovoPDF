@@ -64,10 +64,19 @@ public class PublicApiTests
         [
             "MonitovoPDF.BarcodeType",
             "MonitovoPDF.BarcodeTypes",
+            "MonitovoPDF.FieldPlacement",
             "MonitovoPDF.FillBuilder",
+            "MonitovoPDF.FillResult",
+            "MonitovoPDF.MissingFieldBehaviour",
             "MonitovoPDF.MonitovoPdf",
             "MonitovoPDF.RenderingOptions",
+            "MonitovoPDF.TemplateField",
+            "MonitovoPDF.TemplateFieldKind",
+            "MonitovoPDF.TemplateInfo",
+            "MonitovoPDF.TemplatePage",
             "MonitovoPDF.TemplateRenderException",
+            "MonitovoPDF.TextAlignment",
+            "MonitovoPDF.TextOptions",
         ];
 
         var actual = typeof(MonitovoPdf).Assembly.GetExportedTypes()
