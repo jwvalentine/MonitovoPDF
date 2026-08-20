@@ -84,6 +84,99 @@ internal static class SyntheticTemplate
         return Assemble(bodies);
     }
 
+    /// <summary>One image placeholder: its resource name and where the page draws it.</summary>
+    internal sealed record Slot(string ResourceName, int Left, int Bottom, int Width, int Height);
+
+    /// <summary>
+    /// Produces a template whose placeholders are image XObjects drawn by the content stream,
+    /// which is how templates authored for image-replacing tools are shaped. No form fields.
+    /// </summary>
+    /// <remarks>
+    /// The images are two-by-two pixels of solid colour, written as ASCII hex so the fixture stays
+    /// entirely text and can be read in a diff.
+    /// </remarks>
+    public static byte[] WithImageSlots(params Slot[] slots)
+    {
+        var firstImage = 5;
+
+        var resources = string.Join(" ", slots.Select((slot, index) =>
+            $"{slot.ResourceName} {firstImage + index} 0 R"));
+
+        // Each placeholder is drawn by mapping the unit square onto its rectangle.
+        var drawing = string.Join("\n", slots.Select(slot =>
+            $"q {slot.Width} 0 0 {slot.Height} {slot.Left} {slot.Bottom} cm {slot.ResourceName} Do Q"));
+
+        var bodies = new List<string>
+        {
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] "
+                + $"/Resources << /XObject << {resources} >> >> /Contents 4 0 R >>",
+            $"<< /Length {drawing.Length} >>\nstream\n{drawing}\nendstream",
+        };
+
+        // A distinct colour per slot, so a test can tell which placeholder holds what.
+        var colours = new[] { "FF0000", "00FF00", "0000FF", "FFFF00", "FF00FF", "00FFFF" };
+
+        bodies.AddRange(slots.Select((_, index) =>
+        {
+            var pixel = colours[index % colours.Length];
+            var data = $"{pixel}{pixel}{pixel}{pixel}>";
+
+            return "<< /Type /XObject /Subtype /Image /Width 2 /Height 2 /ColorSpace /DeviceRGB "
+                + $"/BitsPerComponent 8 /Filter /ASCIIHexDecode /Length {data.Length} >>\n"
+                + $"stream\n{data}\nendstream";
+        }));
+
+        return Assemble(bodies);
+    }
+
+    /// <summary>Produces a template carrying both named form fields and image placeholders.</summary>
+    public static byte[] WithFieldsAndImageSlots(Field[] fields, Slot[] slots)
+    {
+        var firstImage = FirstFieldNumber + fields.Length + 1;
+
+        var resources = string.Join(" ", slots.Select((slot, index) =>
+            $"{slot.ResourceName} {firstImage + index} 0 R"));
+
+        var drawing = string.Join("\n", slots.Select(slot =>
+            $"q {slot.Width} 0 0 {slot.Height} {slot.Left} {slot.Bottom} cm {slot.ResourceName} Do Q"));
+
+        var contentNumber = FirstFieldNumber + fields.Length;
+        var fieldReferences = string.Join(
+            " ", fields.Select((_, index) => $"{FirstFieldNumber + index} 0 R"));
+
+        var bodies = new List<string>
+        {
+            $"<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [{fieldReferences}] /DA (/Helv 9 Tf 0 g) >> >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] "
+                + $"/Resources << /Font << >> /XObject << {resources} >> >> "
+                + $"/Annots [{fieldReferences}] /Contents {contentNumber} 0 R >>",
+        };
+
+        bodies.AddRange(fields.Select(field =>
+            "<< /Type /Annot /Subtype /Widget /FT /Tx "
+            + $"/T ({field.Name}) /Rect [{field.Left} {field.Bottom} {field.Right} {field.Top}] "
+            + "/DA (/Helv 9 Tf 0 g) /F 4 >>"));
+
+        bodies.Add($"<< /Length {drawing.Length} >>\nstream\n{drawing}\nendstream");
+
+        var colours = new[] { "FF0000", "00FF00", "0000FF", "FFFF00", "FF00FF", "00FFFF" };
+
+        bodies.AddRange(slots.Select((_, index) =>
+        {
+            var pixel = colours[index % colours.Length];
+            var data = $"{pixel}{pixel}{pixel}{pixel}>";
+
+            return "<< /Type /XObject /Subtype /Image /Width 2 /Height 2 /ColorSpace /DeviceRGB "
+                + $"/BitsPerComponent 8 /Filter /ASCIIHexDecode /Length {data.Length} >>\n"
+                + $"stream\n{data}\nendstream";
+        }));
+
+        return Assemble(bodies);
+    }
+
     /// <summary>Objects 1-3 are the catalog, page tree and page; the fields follow.</summary>
     private const int FirstFieldNumber = 4;
 
@@ -138,6 +231,69 @@ internal static class SyntheticTemplate
 
         // ASCII keeps one character to one byte, so the offsets recorded above stay correct.
         return Encoding.ASCII.GetBytes(document.ToString());
+    }
+
+    /// <summary>A striped PNG of a given size, for when a test needs an image of known shape.</summary>
+    public static byte[] StripedPng(int width, int height)
+    {
+        var row = new byte[width];
+        for (var x = 0; x < width; x++)
+            row[x] = (byte)(x / 3 % 2 == 0 ? 0 : 255);
+
+        var raw = new List<byte>();
+        for (var y = 0; y < height; y++)
+        {
+            raw.Add(0);
+            raw.AddRange(row);
+        }
+
+        static byte[] Chunk(string tag, byte[] data)
+        {
+            var name = System.Text.Encoding.ASCII.GetBytes(tag);
+            var length = BitConverter.GetBytes(data.Length);
+            var crc = BitConverter.GetBytes(Crc32([.. name, .. data]));
+            Array.Reverse(length);
+            Array.Reverse(crc);
+
+            return [.. length, .. name, .. data, .. crc];
+        }
+
+        var w = BitConverter.GetBytes(width);
+        var h = BitConverter.GetBytes(height);
+        Array.Reverse(w);
+        Array.Reverse(h);
+
+        byte[] header = [.. w, .. h, 8, 0, 0, 0, 0];
+
+        return
+        [
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+            .. Chunk("IHDR", header),
+            .. Chunk("IDAT", Deflate([.. raw])),
+            .. Chunk("IEND", []),
+        ];
+    }
+
+    private static byte[] Deflate(byte[] data)
+    {
+        using var output = new MemoryStream();
+        using (var zlib = new System.IO.Compression.ZLibStream(output, System.IO.Compression.CompressionLevel.Optimal, leaveOpen: true))
+            zlib.Write(data, 0, data.Length);
+
+        return output.ToArray();
+    }
+
+    private static uint Crc32(byte[] data)
+    {
+        var crc = 0xFFFFFFFFu;
+        foreach (var b in data)
+        {
+            crc ^= b;
+            for (var i = 0; i < 8; i++)
+                crc = (crc >> 1) ^ (0xEDB88320u & (uint)-(crc & 1));
+        }
+
+        return crc ^ 0xFFFFFFFFu;
     }
 
     /// <summary>A 1x1 pixel PNG, used wherever a test needs a decodable image.</summary>

@@ -167,3 +167,41 @@ def rasterise_with_pdfium(pdf_path, out_prefix, dpi=300):
         document.close()
 
     return sorted(written)
+
+
+def slot_template(width=200, height=200):
+    """Builds a template whose placeholder is an image XObject rather than a form field.
+
+    Templates authored for image-replacing tools are shaped this way: the page draws an image
+    at a fixed spot, and filling means exchanging that image for another. Written by hand
+    because no ordinary authoring tool produces one deliberately.
+    """
+    image = "<< /Type /XObject /Subtype /Image /Width 2 /Height 2 /ColorSpace /DeviceRGB " \
+            "/BitsPerComponent 8 /Filter /ASCIIHexDecode /Length 25 >>\n" \
+            "stream\nFF0000FF0000FF0000FF0000>\nendstream"
+
+    # A generous placeholder, so the barcode has room to keep its modules wide.
+    drawing = "q 170 0 0 60 15 90 cm /Im0 Do Q"
+
+    objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>",
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {width} {height}] "
+        "/Resources << /XObject << /Im0 5 0 R >> >> /Contents 4 0 R >>",
+        f"<< /Length {len(drawing)} >>\nstream\n{drawing}\nendstream",
+        image,
+    ]
+
+    document = "%PDF-1.7\n"
+    offsets = []
+    for index, body in enumerate(objects):
+        offsets.append(len(document))
+        document += f"{index + 1} 0 obj\n{body}\nendobj\n"
+
+    start = len(document)
+    document += f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n"
+    for offset in offsets:
+        document += f"{offset:010d} 00000 n \n"
+    document += f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{start}\n%%EOF\n"
+
+    return document.encode("ascii")

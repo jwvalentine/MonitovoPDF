@@ -75,6 +75,46 @@ var result = MonitovoPdf.FillWithReport(template, fill =>
 Ignoring silently would turn the wrong template into a plausible-looking wrong document, so the
 names that did not match always come back rather than being swallowed.
 
+### Templates whose placeholders are images
+
+Not every template marks its placeholders with form fields. A large class of them — particularly
+those authored for commercial fill libraries — use ordinary **image XObjects** instead: the page
+draws an image at a fixed spot, and filling means exchanging that image for another. Those
+templates are often customer-owned or contractually fixed, so re-authoring them is not an option.
+
+They can be filled by addressing a placeholder's position on the page:
+
+```csharp
+byte[] pdf = MonitovoPdf.Fill(templateBytes, fill =>
+{
+    fill.SetImageAt(1, 1, logoBytes);                              // page 1, first placeholder
+    fill.SetBarcodeAt(1, 2, BarcodeType.Code128, "WIDGET-4471");   // page 1, second
+});
+```
+
+**The replacement inherits the placeholder's geometry exactly.** Only the image is exchanged; the
+page's own drawing instructions are untouched, so the replacement lands where the placeholder did,
+at its size. A replacement of different proportions is **stretched to fill** the placeholder rather
+than fitted or letterboxed — the geometry belongs to the template, not to the image.
+
+Placeholders not addressed are left completely alone, which matters because templates routinely
+carry fixed artwork in slots a caller has no interest in.
+
+`SetBarcodeAt` keeps bars as vector graphics rather than substituting a picture, so edges stay
+exact at any resolution while still inheriting the placeholder's position and size.
+
+**Numbering.** Placeholders are numbered from 1 in order of their PDF resource name, with embedded
+numbers compared as numbers — `/Im2` comes before `/Im10`, not after. A resource dictionary has no
+order of its own, so the rule has to be stated and never vary: a different order would silently
+swap one placeholder's content with another's, and the document would still render.
+
+Do not guess the numbering. `Inspect` reports it:
+
+```csharp
+foreach (var image in MonitovoPdf.Inspect(templateBytes).Pages[0].Images)
+    Console.WriteLine($"{image.Index}: {image.ResourceName} {image.PixelWidth}x{image.PixelHeight}");
+```
+
 ### Reading a template
 
 `Inspect` reports a template's pages and fields without filling anything — the page size, what

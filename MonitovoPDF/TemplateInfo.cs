@@ -23,7 +23,10 @@ public sealed record TemplateInfo(
 /// <param name="WidthPoints">Page width in points, 72 to the inch.</param>
 /// <param name="HeightPoints">Page height in points.</param>
 /// <param name="Rotation">Degrees the page is rotated for display: 0, 90, 180 or 270.</param>
-public sealed record TemplatePage(int Number, double WidthPoints, double HeightPoints, int Rotation)
+/// <param name="Images">The image placeholders the page draws, in the order they are addressed.</param>
+public sealed record TemplatePage(
+    int Number, double WidthPoints, double HeightPoints, int Rotation,
+    IReadOnlyList<TemplateImage> Images)
 {
     /// <summary>Page width in millimetres, for comparing against a physical size.</summary>
     public double WidthMillimetres => WidthPoints * 25.4 / 72;
@@ -76,3 +79,27 @@ public enum TemplateFieldKind
     /// <summary>A signature field.</summary>
     Signature,
 }
+
+/// <summary>
+/// An image placeholder on a page: the position it is addressed by, the name the PDF knows it by,
+/// its pixel size, and where the page draws it.
+/// </summary>
+/// <param name="Index">
+/// One-based position among the page's images, ordered by resource name with embedded numbers
+/// compared as numbers. This is the number <see cref="FillBuilder.SetImageAt(int, int, byte[])"/>
+/// takes.
+/// </param>
+/// <param name="ResourceName">The name the page's own instructions use, such as <c>/Im0</c>.</param>
+/// <param name="PixelWidth">Width of the stored image in pixels, not the size it is drawn at.</param>
+/// <param name="PixelHeight">Height of the stored image in pixels.</param>
+/// <param name="Placements">
+/// Where the page draws it, in points from the top-left. Usually one, occasionally several if the
+/// page draws the same image more than once, and empty when the position could not be worked out
+/// from the page's instructions.
+/// </param>
+public sealed record TemplateImage(
+    int Index,
+    string ResourceName,
+    int PixelWidth,
+    int PixelHeight,
+    IReadOnlyList<FieldPlacement> Placements);

@@ -36,16 +36,28 @@ namespace MonitovoPDF
     public sealed class FillBuilder
     {
         public FillBuilder SetBarcode(string field, BarcodeType type, string value);
+        public FillBuilder SetBarcodeAt(int pageNumber, int imageIndex, BarcodeType type, string value);
         public FillBuilder SetImage(string field, System.IO.Stream image);
         public FillBuilder SetImage(string field, byte[] image);
+        public FillBuilder SetImageAt(int pageNumber, int imageIndex, System.IO.Stream image);
+        public FillBuilder SetImageAt(int pageNumber, int imageIndex, byte[] image);
         public FillBuilder SetText(string field, string value, TextOptions options = null);
         public FillBuilder();
     }
     public sealed class FillResult : IEquatable<FillResult>
     {
-        public FillResult(byte[] Pdf, System.Collections.Generic.IReadOnlyList<string> UnmatchedFields);
+        public FillResult(byte[] Pdf, System.Collections.Generic.IReadOnlyList<string> UnmatchedFields, System.Collections.Generic.IReadOnlyList<ImageSlotReference> UnmatchedImages);
+        public System.Collections.Generic.IReadOnlyList<ImageSlotReference> UnmatchedImages { get; init; }
         public System.Collections.Generic.IReadOnlyList<string> UnmatchedFields { get; init; }
+        public bool Complete { get; }
         public byte[] Pdf { get; init; }
+    }
+    public sealed class ImageSlotReference : IEquatable<ImageSlotReference>
+    {
+        public ImageSlotReference(int PageNumber, int Index);
+        public int Index { get; init; }
+        public int PageNumber { get; init; }
+        public string ToString();
     }
     public enum MissingFieldBehaviour
     {
@@ -101,6 +113,15 @@ namespace MonitovoPDF
         Text = 1,
         Unknown = 0,
     }
+    public sealed class TemplateImage : IEquatable<TemplateImage>
+    {
+        public System.Collections.Generic.IReadOnlyList<FieldPlacement> Placements { get; init; }
+        public TemplateImage(int Index, string ResourceName, int PixelWidth, int PixelHeight, System.Collections.Generic.IReadOnlyList<FieldPlacement> Placements);
+        public int Index { get; init; }
+        public int PixelHeight { get; init; }
+        public int PixelWidth { get; init; }
+        public string ResourceName { get; init; }
+    }
     public sealed class TemplateInfo : IEquatable<TemplateInfo>
     {
         public System.Collections.Generic.IReadOnlyList<TemplateField> Fields { get; init; }
@@ -111,7 +132,8 @@ namespace MonitovoPDF
     }
     public sealed class TemplatePage : IEquatable<TemplatePage>
     {
-        public TemplatePage(int Number, double WidthPoints, double HeightPoints, int Rotation);
+        public System.Collections.Generic.IReadOnlyList<TemplateImage> Images { get; init; }
+        public TemplatePage(int Number, double WidthPoints, double HeightPoints, int Rotation, System.Collections.Generic.IReadOnlyList<TemplateImage> Images);
         public double HeightMillimetres { get; }
         public double HeightPoints { get; init; }
         public double WidthMillimetres { get; }

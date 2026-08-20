@@ -76,6 +76,14 @@ app.MapPost("/v1/labels", async (
 
             foreach (var (field, barcode) in decoded.Barcodes)
                 fill.SetBarcode(field, barcode.Type, barcode.Value);
+
+            foreach (var slot in decoded.Slots)
+            {
+                if (slot.Barcode is { } barcode)
+                    fill.SetBarcodeAt(slot.Page, slot.Index, barcode.Type, barcode.Value);
+                else
+                    fill.SetImageAt(slot.Page, slot.Index, slot.Image!);
+            }
         }, rendering.Value), cancellationToken);
 
         var pdf = await render.WaitAsync(timeout, cancellationToken);
@@ -83,7 +91,7 @@ app.MapPost("/v1/labels", async (
         logger.LogInformation(
             "Rendered a label from a {TemplateBytes} byte template into {PdfBytes} bytes across {FieldCount} field(s).",
             decoded.Template.Length, pdf.Length,
-            decoded.Text.Count + decoded.Images.Count + decoded.Barcodes.Count);
+            decoded.Text.Count + decoded.Images.Count + decoded.Barcodes.Count + decoded.Slots.Count);
 
         return Results.File(pdf, "application/pdf", "label.pdf");
     }

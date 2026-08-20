@@ -193,6 +193,49 @@ def run_barcode_checks():
           f"now decodable, remove from NO_DECODER: {surprises}")
 
 
+def run_image_slot_checks():
+    """Fills a template whose placeholder is an image rather than a form field.
+
+    The barcode replaces the placeholder as vector graphics and inherits its geometry, so the
+    thing worth proving is that it still scans after a real renderer has drawn it — the same
+    bar for a barcode addressed by position as for one addressed by field name.
+    """
+    print("\nReplacing an image placeholder addressed by position")
+
+    template = barcodes.slot_template()
+    value = "SLOT-4471"
+
+    status, body, content_type = post("/v1/labels", {
+        "template": base64.b64encode(template).decode(),
+        "barcodesAt": [{"page": 1, "index": 1, "type": "code128", "value": value}],
+    })
+
+    check("a placeholder template renders", status == 200, f"status {status}: {body[:300]!r}")
+    check("the response is a PDF", content_type.startswith("application/pdf"), content_type)
+
+    if status != 200:
+        return
+
+    out = os.path.join(OUTPUT_DIR, "slots.pdf")
+    with open(out, "wb") as handle:
+        handle.write(body)
+    print(f"        wrote {out} ({len(body)} bytes)")
+
+    check("the barcode replaced the placeholder as vectors, not a picture",
+          b"/Subtype /Form" in body or b"/Subtype/Form" in body,
+          "no form XObject in the output")
+
+    for label, rasterise, dpi in (("poppler", barcodes.rasterise, 300),
+                                  ("pdfium", barcodes.rasterise_with_pdfium, 300),
+                                  ("pdfium", barcodes.rasterise_with_pdfium, 203)):
+        images = rasterise(out, os.path.join(OUTPUT_DIR, f"slot-{label}-{dpi}"), dpi)
+        decoded, _ = barcodes.decode_all(images)
+
+        found = any(fmt == "code128" and text == value for fmt, text in decoded)
+        check(f"the replaced placeholder scans when rasterised by {label} at {dpi} dpi",
+              found, f"decoders read: {sorted(text for _, text in decoded)}")
+
+
 def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     template_path = os.path.join(OUTPUT_DIR, "template.pdf")
@@ -275,6 +318,7 @@ def main():
     check("a field given both text and an image is rejected", status == 400, f"status {status}")
 
     run_barcode_checks()
+    run_image_slot_checks()
 
     print()
     if failures:

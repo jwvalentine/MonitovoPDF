@@ -48,7 +48,7 @@ public static class MonitovoPdf
         var (builder, resolved) = Prepare(template, fill, options);
 
         return new LabelRenderer(resolved)
-            .Render(template, builder.Text, builder.Images, builder.Barcodes).Pdf;
+            .Render(template, builder.Text, builder.Images, builder.Barcodes, builder.Slots).Pdf;
     }
 
     /// <summary>Validates the inputs against the ceilings and makes sure text can be drawn.</summary>
@@ -103,10 +103,10 @@ public static class MonitovoPdf
         byte[] template, Action<FillBuilder> fill, RenderingOptions? options = null)
     {
         var (builder, resolved) = Prepare(template, fill, options);
-        var (pdf, unmatched) = new LabelRenderer(resolved)
-            .Render(template, builder.Text, builder.Images, builder.Barcodes);
+        var (pdf, unmatched, unmatchedImages) = new LabelRenderer(resolved)
+            .Render(template, builder.Text, builder.Images, builder.Barcodes, builder.Slots);
 
-        return new FillResult(pdf, unmatched);
+        return new FillResult(pdf, unmatched, unmatchedImages);
     }
 
     /// <summary>
