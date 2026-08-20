@@ -51,9 +51,11 @@ jobs:
   integration:
     name: End-to-end against a real template
     runs-on: ubuntu-latest
-    # Builds a LibreOffice image, so it is slow. Kept off the pull-request path to keep that
-    # feedback quick; run it manually with the "Run workflow" button when a change warrants it.
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    # Runs on pull requests too. It builds a LibreOffice image and so is the slow half of CI, but
+    # it is also the only check that proves the actual product works: a template authored by a
+    # real tool, filled, and read back by decoders that are not the encoder. A check that only
+    # runs after merge reports problems too late to stop them.
+    needs: build
 
     steps:
       - uses: actions/checkout@v4
