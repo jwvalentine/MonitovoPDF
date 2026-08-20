@@ -1,107 +1,108 @@
 # MonitovoPDF — Product Plan
 
-> **Status: draft. The decisions below are OPEN, not made.** This file records the
-> intent of the project and lays out the choices that need making, with the trade-offs
-> as they are currently understood. Nothing here has been agreed or implemented. Joe
-> decides; do not treat any option as chosen because it appears first.
+> **Status: the founding decisions are made and the first path is built.** The rendering approach,
+> the API shape and the first use case are settled and implemented. What remains open is recorded
+> below as open decisions.
 >
-> Every licence claim in this file **must be verified against the library's current
-> licence before adoption.** Several .NET PDF libraries have changed licence, and the
-> project cannot ship under MIT on top of a copyleft or commercially-licensed core.
+> Every licence claim in this file **must be verified against the library's current licence before
+> adoption.** Several .NET PDF libraries have changed licence, and the project cannot ship under
+> MIT on top of a copyleft or commercially-licensed core.
 
 ---
 
 ## Vision
 
-A small, self-hostable HTTP service that turns source content into PDF documents, with
-no per-document cost and no licence obligation that prevents embedding it in a
-commercial product.
+A small, self-hostable HTTP service that fills template documents with data, with no per-document
+cost and no licence obligation that prevents embedding it in a commercial product.
 
 ## Design Principles
 
-1. **One job, done well.** Content in, PDF out. Not a document management system.
+1. **One job, done well.** Template and data in, PDF out. Not a document management system.
 2. **Permissive all the way down.** MIT, on top of dependencies whose licences allow
    redistribution under MIT.
-3. **Safe by default.** The service accepts untrusted input. Sandboxing, bounded
-   resources and no network reach from the renderer are requirements, not features.
+3. **Safe by default.** The service accepts untrusted input. Bounded resources and no network
+   reach from the renderer are requirements, not features.
 4. **Few dependencies.** Every package is a licence obligation and a patching burden.
 5. **Runs anywhere.** A single container, no external services required.
 
 ---
 
-## Open Decision 1 — Rendering approach
+## Decision 1 — Rendering approach — **DECIDED: fill an existing template**
 
-The most consequential choice, and everything else follows from it.
+The first use case is label printing: a template is held as base64 in the consumer's database,
+rehydrated per print, populated with text and images, and sent to a label printer.
 
-**Option A — Document-model library (draw the PDF directly in C#).**
-Define documents in code or from a data model, and a library emits the PDF.
-* Upside: no browser, small container, fast, low memory, fully deterministic output,
-  no SSRF surface.
-* Downside: layout is code, not markup. Rich or design-heavy documents are laborious.
-* Candidates to evaluate: **PDFsharp / MigraDoc** (believed MIT — verify),
-  **QuestPDF** (*believed to have moved from MIT to a dual Community/Professional
-  licence — verify carefully, this may disqualify it*).
+That is a *fill* problem, not a *generate* problem, and it is much smaller than either of the
+options originally considered here (a document-model library, or HTML through headless Chromium).
+Both of those were dropped. Notably, because nothing is ever fetched by URL, the renderer needs no
+network access at all — the SSRF surface that made the Chromium option expensive to secure does
+not exist in this design.
 
-**Option B — HTML to PDF via headless Chromium.**
-Accept HTML/CSS, render in a headless browser, print to PDF.
-* Upside: authors use HTML/CSS, which almost everyone already knows. Excellent
-  fidelity for complex layouts. Templates are easy to write and preview.
-* Downside: large container image, high memory per render, slower cold start, and a
-  genuine security surface — a renderer that follows user-supplied URLs is an SSRF
-  primitive. Requires strict sandboxing and network egress blocking.
-* Candidates to evaluate: **PuppeteerSharp**, **Playwright for .NET**.
+**Library: PDFsharp**, verified MIT at the time of adoption from the upstream repository. QuestPDF
+was rejected on two counts: its licence moved to a dual Community/Professional model, and it
+generates documents rather than filling existing ones.
 
-**Option C — Both, behind one API.**
-A document-model path for structured reports, an HTML path for arbitrary templates.
-* Upside: covers both use cases.
-* Downside: two rendering paths to build, test, secure and document. Realistically a
-  later phase, not a starting point.
+**Templates mark placeholders with named AcroForm fields**, which keeps templates self-describing
+and lets a designer author them visually in any PDF tool.
 
-**Recommendation:** decide the *first* target use case before picking. If the first
-consumer needs structured, data-driven reports with a consistent layout,
-Option A is the smaller and safer starting point. If the first consumer needs
-designer-authored templates, Option B is hard to avoid.
+**The output is flat, drawn into the page content stream.** This is the load-bearing detail.
+PDFsharp does not generate appearance streams for filled form fields — upstream issue 64, closed
+as *wontfix* — so a document whose content lives in field values renders blank in viewers that do
+not build appearances themselves, which includes several print paths. The form fields are
+therefore read only for their names, positions and sizes; the values are drawn onto the page and
+the fields are then stripped.
 
-## Open Decision 2 — API surface
+## Decision 2 — API surface — **DECIDED: synchronous, stateless, self-contained**
 
-Undecided. Questions to answer:
-* Synchronous render-and-return, asynchronous job + poll, or both?
-* What is the request body — HTML, a JSON document model, Markdown, a template name
-  plus data?
-* Where do generated PDFs go — streamed back in the response only, or stored?
-* Is there a template concept, or is every request self-contained?
+`POST /v1/labels` takes the template and the values in one request and returns the finished PDF
+in the response. The service stores nothing: no templates, no generated documents, no job state.
+Consumers keep templates wherever they already keep them.
 
-## Open Decision 3 — Authentication
+Printing is explicitly out of scope. The service returns bytes; the caller sends them to the
+printer. This keeps the service platform-neutral and stops it from needing to reach into a local
+network, which the security rules forbid.
 
-Undecided. Options range from none (assume it runs on a trusted network behind a
-proxy) through a static API key to full OIDC. Whatever is chosen must be **optional
-and configuration-driven**, because self-hosters' deployment models differ.
+## Decision 3 — Authentication — **OPEN**
 
-## Open Decision 4 — Project layout
+Still undecided. Options range from none (assume it runs on a trusted network behind a proxy)
+through a static API key to full OIDC. Whatever is chosen must be **optional and
+configuration-driven**, because self-hosters' deployment models differ. Nothing in the current
+build authenticates anything.
 
-Currently a single flat project. Needs a decision once real code exists: stay flat,
-or split into `src/` + `tests/` with a solution file. A test project is needed either
-way, and the test framework is undecided.
+## Decision 4 — Project layout — **PARTLY DECIDED**
 
-## Open Decision 5 — Distribution
+The application project stays at the repository root and a sibling `MonitovoPDF.Tests` project
+holds the tests, with a solution file tying them together. The test framework is **xUnit**.
 
-How consumers are expected to get it: a published Docker image, a NuGet package, a
-GitHub release binary, or source only. This affects whether the repository needs a
-`Dockerfile`, a release workflow and a versioning policy.
+This leaves one wart: the test project sits inside the application project's directory, so the
+application's `.csproj` has to exclude it from its source globs explicitly. Moving to a
+`src/` + `tests/` layout would remove that, and is worth revisiting before the repository grows.
+
+## Decision 5 — Distribution — **OPEN**
+
+How consumers are expected to get it: a published Docker image, a NuGet package, a GitHub release
+binary, or source only. This affects whether the repository needs a `Dockerfile`, a release
+workflow and a versioning policy. A container image is the obvious first answer for a service, and
+one is needed for deployment regardless.
+
+## Decision 6 — Fonts in a container — **OPEN**
+
+PDFsharp's cross-platform build loads no fonts, and a Linux container has none installed, so a
+deployment must supply them. The service reads `.ttf` files from a configured directory. What is
+undecided is whether the project ships a default font in its container image — which means picking
+one whose licence permits redistribution — or requires every deployment to mount its own.
 
 ---
 
 ## Rough Phasing
 
-These phases assume the decisions above are made first.
-
-* **Phase 0 — Foundations.** Test project, CI on pull requests, `Dockerfile`, health
-  endpoint, structured logging. No PDF code yet.
-* **Phase 1 — First render.** The narrowest useful path end to end: one input format,
-  one output, with tests pinning the output and explicit limits on size and time.
-* **Phase 2 — Hardening.** Resource ceilings, sandboxing, input validation, an abuse
-  test pass, and documentation of the security model.
-* **Phase 3 — Usability.** Templates, additional input formats, richer options
-  (page size, margins, headers/footers), OpenAPI documentation.
-* **Phase 4 — Release.** Versioning policy, published artefacts, contribution guide,
-  security disclosure policy.
+* **Phase 0 — Foundations.** *Partly done.* Test project, health endpoint and configuration
+  ceilings are in place. CI and a `Dockerfile` are not.
+* **Phase 1 — First render.** *Done.* Template in, populated flat PDF out, with tests pinning the
+  drawn output and explicit limits on size, page count and field count.
+* **Phase 2 — Hardening.** An abuse test pass against malformed and hostile templates, a documented
+  security model, and a decision on authentication.
+* **Phase 3 — Usability.** Richer placement control, OpenAPI documentation, and better diagnostics
+  for template authors — most usefully an endpoint that lists the fields a template defines.
+* **Phase 4 — Release.** Versioning policy, published artefacts, contribution guide, security
+  disclosure policy.

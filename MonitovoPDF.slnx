@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="MonitovoPDF.csproj" />
+  <Project Path="MonitovoPDF.Tests/MonitovoPDF.Tests.csproj" />
+</Solution>
