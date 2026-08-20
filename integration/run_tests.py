@@ -148,44 +148,47 @@ def run_barcode_checks():
     check("barcodes are vectors, not images", b"/XObject" not in body,
           "an XObject means something was rasterised")
 
-    # Rasterise with two independent renderers. A symbol that decodes under one and not the other
-    # is a real defect, and a single renderer would hide it.
-    per_renderer = {}
-    for renderer, rasterise in (("poppler", barcodes.rasterise),
-                                ("pdfium", barcodes.rasterise_with_pdfium)):
-        print(f"\nDecoding the rendered sheet, rasterised by {renderer}")
-        images = rasterise(sheet_out, os.path.join(OUTPUT_DIR, f"sheet-{renderer}"))
+    # Every pass must stand on its own. Two renderers, because a symbol that decodes under one
+    # and not the other is a real defect a single renderer hides. Two resolutions, because 203 dpi
+    # is what a great many thermal label printers rasterise at, and narrow modules fail there long
+    # before they fail at 300 — a barcode that only passes at high resolution is not one to trust.
+    expected_to_decode = [name for name in barcodes.NAMES if name not in barcodes.NO_DECODER]
+    read_by = {name: [] for name, *_ in barcodes.SYMBOLOGIES}
+
+    for label, rasterise, dpi in (("poppler", barcodes.rasterise, 300),
+                                  ("pdfium", barcodes.rasterise_with_pdfium, 300),
+                                  ("pdfium", barcodes.rasterise_with_pdfium, 203)):
+        pass_name = f"{label} at {dpi} dpi"
+        prefix = os.path.join(OUTPUT_DIR, f"sheet-{label}-{dpi}")
+
+        print(f"\nDecoding the rendered sheet, rasterised by {pass_name}")
+        images = rasterise(sheet_out, prefix, dpi)
         decoded, tally = barcodes.decode_all(images)
-        per_renderer[renderer] = decoded
         print(f"        {len(images)} page(s); decoders read "
               + ", ".join(f"{k}={v}" for k, v in tally.items()))
 
-    for renderer, decoded in per_renderer.items():
-        _, unread_here = barcodes.verify(decoded)
-        expected_here = [n for n in barcodes.NAMES if n not in barcodes.NO_DECODER]
-        failed_here = [n for n in expected_here if n in unread_here]
-        check(f"every decodable symbology scans when rasterised by {renderer}",
-              not failed_here, f"did not decode: {failed_here}")
+        results, unread = barcodes.verify(decoded)
+        for name, _, hit in results:
+            if hit:
+                read_by[name].append(pass_name)
 
-    decoded = set().union(*per_renderer.values())
-    results, unread = barcodes.verify(decoded)
-    for name, sent, hit in results:
-        if hit:
-            print(f"  PASS  {name} decoded back to \"{sent}\"")
-        elif name in barcodes.NO_DECODER:
+        failed = [name for name in expected_to_decode if name in unread]
+        check(f"every decodable symbology scans when rasterised by {pass_name}",
+              not failed, f"did not decode: {failed}")
+
+    print("\nWhich passes read each symbology")
+    for name, sent, *_ in barcodes.SYMBOLOGIES:
+        where = read_by[name]
+        if name in barcodes.NO_DECODER:
             print(f"  ----  {name} rendered; no decoder here can read it")
+        elif where:
+            print(f"  PASS  {name} decoded back to \"{sent}\"  [{', '.join(where)}]")
         else:
-            print(f"  FAIL  {name} was not read by any decoder")
-
-    # Everything except the symbologies no available decoder supports must scan.
-    expected_to_decode = [n for n in barcodes.NAMES if n not in barcodes.NO_DECODER]
-    failed = [n for n in expected_to_decode if n in unread]
-    check(f"all {len(expected_to_decode)} decodable symbologies scan back correctly",
-          not failed, f"did not decode: {failed}")
+            print(f"  FAIL  {name} was not read by any pass")
 
     # Guard the other direction: if a decoder for these ever appears, tighten the exclusion
     # rather than leaving them silently untested.
-    surprises = [n for n in barcodes.NO_DECODER if n not in unread]
+    surprises = [name for name in barcodes.NO_DECODER if read_by[name]]
     check("the undecodable list is still accurate", not surprises,
           f"now decodable, remove from NO_DECODER: {surprises}")
 

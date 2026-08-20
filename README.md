@@ -226,9 +226,31 @@ you — nothing to do. What is *not* calculated is a check digit belonging to th
 digit of an EAN, UPC or GS1 number, or of an ITF-14. Supply those yourself, or the result is a
 barcode that scans cleanly and carries the wrong number.
 
-Quiet zones are included in the symbol rather than assumed around it, so a barcode drawn into a
-small field gets narrower modules instead of a clipped margin. Whether those modules survive a
-particular printer's resolution is a question for a physical scan, not for this library.
+### Sizing a barcode field
+
+Quiet zones are included in the symbol rather than assumed around it, so a barcode never loses its
+margin to the edge of its field. The consequence is that **a field too small for its content
+produces narrow modules rather than a clipped symbol** — it will look fine on screen and fail to
+scan.
+
+The narrow module is what decides. A printer cannot render a module thinner than one dot, and a
+module under roughly two dots scans unreliably:
+
+| Printer resolution | One dot | Practical minimum module |
+|---|---|---|
+| 203 dpi | 0.125 mm | ~0.25 mm |
+| 300 dpi | 0.085 mm | ~0.17 mm |
+| 600 dpi | 0.042 mm | ~0.08 mm |
+
+Two things follow. **Shorter content needs less width** — a Code 128 of eight characters needs
+noticeably less room than one of twenty, so sizing a field for the longest value you will ever put
+in it is the safe approach. And **a barcode is the one element worth widening the field for**:
+text shrinks to fit and stays readable, a barcode shrinks to fit and stops scanning.
+
+The test suite renders every symbology and decodes it back at 300 dpi and at 203 dpi, the latter
+being what many thermal label printers rasterise at. That establishes the symbols themselves are
+sound at low resolution. It does not establish that *your* field is wide enough for *your* content
+on *your* printer — for that, print one and scan it.
 
 Every symbology except MSI and Plessey is verified end to end: rendered, rasterised, and read back
 by an independent decoder that must agree on both the symbology and the value. MSI and Plessey
