@@ -16,9 +16,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
 
@@ -42,7 +42,7 @@ jobs:
       - name: Pack
         run: dotnet pack MonitovoPDF/MonitovoPDF.csproj --configuration Release --no-build -o artifacts
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: package
           path: artifacts/*
@@ -58,14 +58,14 @@ jobs:
     needs: build
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Fill a LibreOffice-authored template and decode the barcodes
         run: >
           docker compose -f integration/docker-compose.yml up
           --build --abort-on-container-exit --exit-code-from integration
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: integration-output
