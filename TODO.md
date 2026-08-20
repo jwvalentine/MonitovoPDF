@@ -9,14 +9,13 @@ Last reviewed: 2026-08-19
 
 ## Next up
 
-- [ ] **Add a `Dockerfile`** so the service can run as a container, and decide whether it ships a
-      font. Without fonts in the image, text will not draw on Linux — see Decision 6 in PLAN.md.
-- [ ] **Add a GitHub Actions workflow**: restore, build, test on pull requests to `main`.
+- [ ] **Add a GitHub Actions workflow**: restore, build, test on pull requests to `main`. Consider
+      running the `integration/` container there too, though it is slow to build.
 - [ ] **Enable branch protection on `main`** so the no-direct-commits rule is enforced rather than
       documented.
-- [ ] **Verify a real template end to end.** Everything so far is tested against synthetic
-      templates built in code. A template authored in Acrobat or LibreOffice, filled and sent to an
-      actual label printer, is the test that matters and has not been run.
+- [ ] **Print a rendered label on real hardware.** A LibreOffice-authored template is now filled
+      end to end in Docker and read back with poppler, but nothing has been sent to an actual label
+      printer. That is the last unverified link in the chain.
 - [ ] Enable Dependabot for NuGet and GitHub Actions.
 
 ## Hardening

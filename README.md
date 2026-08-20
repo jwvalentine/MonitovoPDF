@@ -127,6 +127,16 @@ deployment**, or text will fail to draw. Face names come from file names, so `Ar
 On Windows the host's installed fonts are used when no directory is configured, which is enough
 for local development.
 
+## Running in Docker
+
+```bash
+docker build -t monitovopdf .
+docker run --rm -p 8080:8080 monitovopdf
+```
+
+The image installs DejaVu and points `Rendering__FontDirectory` at it, so text draws without
+further configuration.
+
 ## Tests
 
 ```bash
@@ -134,6 +144,20 @@ dotnet test
 ```
 
 Test fixtures are synthetic PDFs built in code, so the repository carries no binary documents.
+
+### End-to-end check
+
+The unit tests render templates they synthesise themselves, which proves the renderer but not that
+a template from a real authoring tool can be filled. The `integration/` container closes that gap:
+LibreOffice builds a PDF form through its own API, the service fills it, and poppler reads the
+result back to confirm the values are really there.
+
+```bash
+docker compose -f integration/docker-compose.yml up --build --abort-on-container-exit
+```
+
+The generated template and the rendered label are written to `integration/out/` so they can be
+opened and looked at. The run exits non-zero if any check fails.
 
 ## Contributing
 

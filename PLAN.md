@@ -78,26 +78,33 @@ This leaves one wart: the test project sits inside the application project's dir
 application's `.csproj` has to exclude it from its source globs explicitly. Moving to a
 `src/` + `tests/` layout would remove that, and is worth revisiting before the repository grows.
 
-## Decision 5 — Distribution — **OPEN**
+## Decision 5 — Distribution — **PARTLY DECIDED**
 
-How consumers are expected to get it: a published Docker image, a NuGet package, a GitHub release
-binary, or source only. This affects whether the repository needs a `Dockerfile`, a release
-workflow and a versioning policy. A container image is the obvious first answer for a service, and
-one is needed for deployment regardless.
+A `Dockerfile` now builds a runnable image, so a container is the working answer for deployment.
+What is still undecided is *publishing*: whether the project pushes a tagged image to a registry,
+and whether it also offers a NuGet package or a release binary. That decision needs a versioning
+policy and a release workflow to go with it.
 
-## Decision 6 — Fonts in a container — **OPEN**
+## Decision 6 — Fonts in a container — **DECIDED: ship DejaVu in the image**
 
 PDFsharp's cross-platform build loads no fonts, and a Linux container has none installed, so a
-deployment must supply them. The service reads `.ttf` files from a configured directory. What is
-undecided is whether the project ships a default font in its container image — which means picking
-one whose licence permits redistribution — or requires every deployment to mount its own.
+deployment must supply them. The service reads `.ttf` files from a configured directory.
+
+The container image installs `fonts-dejavu-core` and points `Rendering__FontDirectory` at it, so
+the image works out of the box rather than failing on the first render. DejaVu is under the
+Bitstream Vera licence, which permits redistribution provided the notice travels with the copies;
+the Debian package's copyright file remains in the image, which satisfies that. A deployment
+needing different typefaces overrides the directory and mounts its own.
+
+Note that DejaVu's file names — `DejaVuSans.ttf`, `DejaVuSans-Bold.ttf` — happen to match the
+face-name convention the resolver expects, which is why no mapping configuration is needed.
 
 ---
 
 ## Rough Phasing
 
-* **Phase 0 — Foundations.** *Partly done.* Test project, health endpoint and configuration
-  ceilings are in place. CI and a `Dockerfile` are not.
+* **Phase 0 — Foundations.** *Partly done.* Test project, health endpoint, configuration ceilings
+  and a `Dockerfile` are in place. CI is not.
 * **Phase 1 — First render.** *Done.* Template in, populated flat PDF out, with tests pinning the
   drawn output and explicit limits on size, page count and field count.
 * **Phase 2 — Hardening.** An abuse test pass against malformed and hostile templates, a documented

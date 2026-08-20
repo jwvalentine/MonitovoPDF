@@ -29,12 +29,15 @@ text and image values, draws them into the page at the positions the template's 
 occupy, strips the fields, and returns a flat PDF. There is a `/health` endpoint. 27 tests cover
 the renderer, the request decoder and the HTTP surface.
 
-**Not yet built:** authentication of any kind, a `Dockerfile`, CI, and OpenAPI documentation. The
-service must not be exposed to an untrusted network as it stands.
+A `Dockerfile` builds a runnable image with fonts installed, and `integration/` holds a
+container-based end-to-end check: LibreOffice builds a real PDF form through its own API, the
+service fills it, and poppler reads the values back out.
 
-**Not yet proven:** everything is tested against synthetic templates built in code. No template
-authored in a real PDF tool has been filled and sent to a real label printer. That is the test
-that matters and it has not been run.
+**Not yet built:** authentication of any kind, CI, and OpenAPI documentation. The service must not
+be exposed to an untrusted network as it stands.
+
+**Not yet proven:** nothing has been sent to an actual label printer. The chain is verified as far
+as a correct PDF that an independent extractor can read; the final hop to hardware is untested.
 
 ---
 
@@ -79,6 +82,12 @@ MonitovoPDF/
 │   ├── FileSystemFontResolver.cs     # Loads .ttf files from a configured directory
 │   └── TemplateRenderException.cs    # Caller-input failures, mapped to 4xx
 ├── MonitovoPDF.Tests/                # xUnit; synthetic PDF fixtures built in code
+├── integration/                      # LibreOffice-driven end-to-end check, run via Docker
+│   ├── make_template.py              # Builds an AcroForm template through the UNO API
+│   ├── run_tests.py                  # Fills it against the running service and inspects the result
+│   ├── Dockerfile                    # LibreOffice + poppler
+│   └── docker-compose.yml            # Runs the service and the check together
+├── Dockerfile                        # Runtime image; installs DejaVu so text can draw
 ├── MonitovoPDF.csproj                # net10.0, nullable + implicit usings, PDFsharp 6.2.4
 ├── MonitovoPDF.slnx                  # Solution tying the app and test projects together
 ├── appsettings.json                  # Defaults, including the Rendering ceilings
@@ -129,7 +138,21 @@ export PATH="$PATH:/c/Program Files/GitHub CLI"
 
 Text will not draw on Linux unless `Rendering__FontDirectory` points at a directory of `.ttf`
 files. On Windows the host's installed fonts are used automatically, so local development works
-without configuration — which means a font problem will first appear in a container, not here.
+without configuration — which means a font problem will first appear in a container, not here. The
+shipped `Dockerfile` installs DejaVu and sets the directory, so the image is already correct.
+
+One consequence worth knowing: the two font paths encode text differently. Windows' platform
+resolver produces literal text in the content stream, while a font loaded from a directory is
+embedded as a subset and the text becomes glyph indices. Assertions that grep the raw bytes for a
+drawn value will pass on Windows and fail in a container — use a text extractor instead.
+
+### Running the end-to-end check
+
+```bash
+docker compose -f integration/docker-compose.yml up --build --abort-on-container-exit
+```
+
+Artefacts land in `integration/out/` (gitignored). The run exits non-zero if any check fails.
 
 ---
 

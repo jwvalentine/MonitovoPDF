@@ -1,0 +1,11 @@
+# Keep the build context small and free of host build output.
+**/bin/
+**/obj/
+.git/
+.vs/
+.vscode/
+.idea/
+MonitovoPDF.Tests/
+integration/
+*.user
+*.md

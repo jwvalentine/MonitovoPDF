@@ -1,0 +1,24 @@
+# Runs the service and the LibreOffice-driven end-to-end check together.
+#
+#   docker compose -f integration/docker-compose.yml up --build --abort-on-container-exit
+#
+# The generated template and the rendered label are written to integration/out/ so they
+# can be opened and looked at afterwards.
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+
+  integration:
+    build:
+      context: .
+    depends_on:
+      - app
+    environment:
+      MONITOVO_URL: http://app:8080
+      OUTPUT_DIR: /out
+    volumes:
+      - ./out:/out

@@ -503,3 +503,6 @@ secrets.json
 
 # Scratch space for throwaway scripts, sample PDFs and profiling output.
 scratch/
+
+# Output of the integration run: a generated template and a rendered label.
+integration/out/
