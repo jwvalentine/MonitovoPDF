@@ -1,0 +1,15 @@
+# Keep the build context small and free of host build output.
+**/bin/
+**/obj/
+.git/
+.vs/
+.vscode/
+.idea/
+MonitovoPDF.Tests/
+integration/
+*.user
+*.md
+
+# Licence notices must reach the image; several of these licences require the
+# notice to travel with the copies.
+!THIRD-PARTY-NOTICES.md

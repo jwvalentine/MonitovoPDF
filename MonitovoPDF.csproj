@@ -6,4 +6,20 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+  <!--
+    The test project sits inside this project's directory, so it would otherwise be swept up by the
+    default source globs. Revisit if the repository moves to a src/ + tests/ layout.
+  -->
+  <ItemGroup>
+    <Compile Remove="MonitovoPDF.Tests/**" />
+    <Content Remove="MonitovoPDF.Tests/**" />
+    <None Remove="MonitovoPDF.Tests/**" />
+    <EmbeddedResource Remove="MonitovoPDF.Tests/**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="PDFsharp" Version="6.2.4" />
+    <PackageReference Include="ZXing.Net" Version="0.16.11" />
+  </ItemGroup>
+
 </Project>
