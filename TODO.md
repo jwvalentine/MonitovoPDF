@@ -50,7 +50,10 @@ These cannot be done from the repository, and the release workflow will fail wit
 - [ ] **Print a rendered label on real hardware.** A LibreOffice-authored template is now filled
       end to end in Docker and read back with poppler, but nothing has been sent to an actual label
       printer. That is the last unverified link in the chain.
-- [ ] Enable Dependabot for NuGet and GitHub Actions.
+- [ ] **Enable Dependabot for NuGet and GitHub Actions.** This matters more now that every action
+      is pinned to a commit: a pin never moves, so without something proposing updates the
+      workflows quietly fall behind on security fixes. Dependabot understands the pinned
+      `sha # version` form and updates both parts together.
 - [ ] **Confirm MSI and Plessey against real scanners** if anyone needs them. They render, but no
       decoder in the integration image can read them, so they are the only symbologies shipped
       without scan verification. Consider dropping them if nobody does.
@@ -84,10 +87,6 @@ These cannot be done from the repository, and the release workflow will fail wit
       and it was the one that mattered: it gives people a private channel to report a vulnerability
       instead of opening a public issue.
 - [ ] Add repository topics and confirm the description on GitHub for discoverability.
-- [ ] Consider pinning the remaining GitHub Actions to commit SHAs. `NuGet/login` is already
-      pinned, because it exchanges an identity token for a publishing credential and so is the
-      most sensitive step in the repository. The first-party `actions/*` steps still float on
-      major tags.
 
 ## Deferred / to revisit
 
