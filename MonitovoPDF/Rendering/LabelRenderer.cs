@@ -394,6 +394,8 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
     /// </remarks>
     private void DrawButton(ResolvedState state)
     {
+        var selected = 0;
+
         for (var i = 0; i < state.Widgets.Count; i++)
         {
             var (page, widget) = state.Widgets[i];
@@ -409,8 +411,25 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
                 ? FieldAppearances.OnStateOf(widget)
                 : FieldAppearances.OffState;
 
+            if (ticked)
+                selected++;
+
             if (wanted is null || !FieldAppearances.Draw(page, widget, wanted))
                 FieldAppearances.DrawFallback(page, widget, ticked);
+        }
+
+        // Asking for an option and selecting none of them is a defect, not an answer: the
+        // document would come out with the whole group cleared and nothing to say why, which
+        // reads as a form somebody deliberately left blank.
+        //
+        // This is deliberately a check on the outcome rather than on any particular way of
+        // matching, because the ways a template can name its buttons are not all known here.
+        // A shape nobody anticipated fails loudly instead of producing a plausible wrong answer.
+        if (state.State.Ticked is null && selected == 0)
+        {
+            throw new TemplateRenderException(
+                $"Field '{state.Name}' has no button matching '{state.State.Value}', so nothing "
+                + "would be selected. Inspect reports the values the field accepts.");
         }
     }
 

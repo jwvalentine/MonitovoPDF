@@ -204,6 +204,23 @@ public class FormControlTests
     }
 
     [Fact]
+    public void SelectingSomethingThatMatchesNoButtonFails()
+    {
+        // A button field constraining nothing has no list to validate against, so a value that
+        // matches no button gets as far as drawing and then selects none of them. Checking the
+        // outcome rather than the matching is what makes this hold for template shapes nobody
+        // here has seen: whatever a tool calls its states, ending up with nothing selected when
+        // something was asked for is a defect.
+        var template = SyntheticTemplate.WithFormControls(withArtwork: false);
+
+        var exception = Assert.Throws<TemplateRenderException>(() =>
+            MonitovoPdf.Fill(template, fill => fill.SetChoice("agree", "Maybe")));
+
+        Assert.Contains("Maybe", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("agree", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void InspectReportsWhatAFieldWillAccept()
     {
         // A caller should not have to guess the options, and they belong to the template.

@@ -19,12 +19,12 @@ RUN apt-get update \
 # zxing-cpp reads the 2D symbologies zbar cannot. pypdfium2 is PDFium, a different renderer from
 # poppler: a document that rasterises correctly under one and not the other is a real defect, and
 # PDFium is what many print paths use.
-RUN pip3 install --quiet --break-system-packages --no-cache-dir zxing-cpp pillow pypdfium2
+RUN pip3 install --quiet --break-system-packages --no-cache-dir zxing-cpp pillow pypdfium2 reportlab
 
 # LibreOffice needs a writable home for its user profile.
 ENV HOME=/tmp
 
 WORKDIR /integration
-COPY make_template.py barcodes.py run_tests.py ./
+COPY make_template.py barcodes.py reportlab_form.py run_tests.py ./
 
 ENTRYPOINT ["python3", "run_tests.py"]

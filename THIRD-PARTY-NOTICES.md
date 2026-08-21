@@ -155,6 +155,7 @@ Nothing below is shipped to consumers. It is listed so the distinction is on the
 | zxing-cpp | Apache-2.0 | `integration/` image |
 | pypdfium2 | BSD-3-Clause / Apache-2.0 | `integration/` image |
 | pillow | MIT-CMU | `integration/` image |
+| reportlab | BSD-3-Clause | `integration/` image |
 
 The licences of the Debian packages were read from each package's own
 `/usr/share/doc/<package>/copyright` inside the built image, and those of the Python packages
