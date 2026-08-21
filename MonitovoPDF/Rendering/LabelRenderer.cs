@@ -242,9 +242,20 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
     }
 
     /// <summary>A field to put into a state, with the widgets that show it.</summary>
+    /// <param name="Name">The field's name, as the caller addressed it.</param>
+    /// <param name="State">What the caller asked for.</param>
+    /// <param name="IsChoice">Whether this is a dropdown or list box rather than a set of buttons.</param>
+    /// <param name="Look">The font, size and alignment to draw a chosen option in.</param>
+    /// <param name="Widgets">The widget annotations the field shows itself through, in order.</param>
+    /// <param name="Chosen">
+    /// Which of the field's buttons was chosen, by position, or -1 when the choice is made by
+    /// name instead. A radio group may list its values in <c>/Opt</c>, in which case the value a
+    /// caller supplies is matched to a button by position and the button's own state name is
+    /// whatever the template happens to call it — commonly just its number.
+    /// </param>
     private sealed record ResolvedState(
         string Name, FieldState State, bool IsChoice, Placement Look,
-        List<(PdfPage Page, PdfDictionary Widget)> Widgets);
+        List<(PdfPage Page, PdfDictionary Widget)> Widgets, int Chosen);
 
     /// <summary>
     /// Matches every requested state to its field, and refuses a value the field does not offer.
@@ -309,7 +320,14 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
                     widgets[0].Page, ToCanvasRect(widgets[0].Widget.Elements.GetRectangle("/Rect"), widgets[0].Page),
                     family, size, alignment, state.Chosen.Count > 1);
 
-                resolved.Add(new ResolvedState(name, state, isChoice, look, widgets));
+                // A set of buttons listing its values in /Opt is matched by position, because the
+                // state names those buttons answer to are then the template's own business and
+                // are usually nothing a caller would recognise.
+                var chosen = !isChoice && state.Ticked is null && field.Elements.GetArray("/Opt") is not null
+                    ? permitted.IndexOf(state.Value ?? "")
+                    : -1;
+
+                resolved.Add(new ResolvedState(name, state, isChoice, look, widgets, chosen));
             }
         }
 
@@ -376,12 +394,16 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
     /// </remarks>
     private void DrawButton(ResolvedState state)
     {
-        foreach (var (page, widget) in state.Widgets)
+        for (var i = 0; i < state.Widgets.Count; i++)
         {
+            var (page, widget) = state.Widgets[i];
+
             // What the caller asked for, which is settled before looking at the widget. A box the
             // template gives no artwork for still has to end up drawn the way it was asked for.
             var ticked = state.State.Ticked
-                ?? FieldAppearances.OnStateOf(widget) == $"/{state.State.Value}";
+                ?? (state.Chosen >= 0
+                    ? i == state.Chosen
+                    : FieldAppearances.OnStateOf(widget) == $"/{state.State.Value}");
 
             var wanted = ticked
                 ? FieldAppearances.OnStateOf(widget)

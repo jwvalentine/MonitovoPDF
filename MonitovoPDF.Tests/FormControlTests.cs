@@ -164,6 +164,46 @@ public class FormControlTests
     }
 
     [Fact]
+    public void ARadioGroupThatNamesItsButtonsByNumberStillSelectsTheRightOne()
+    {
+        // The other shape a radio group comes in: the values a caller would use live in /Opt on
+        // the group, and the buttons answer to states named after their position. Matching the
+        // chosen value against those state names finds nothing, and the failure is silent —
+        // every button goes off and the form comes out with nothing selected. So the value is
+        // matched to a button by position whenever the group lists its values.
+        var template = SyntheticTemplate.WithNumberedRadioGroup();
+
+        Assert.Equal(["Small", "Large"], MonitovoPdf.Inspect(template).Field("size")!.Options);
+
+        var pdf = MonitovoPdf.Fill(template, fill => fill.SetChoice("size", "Large"));
+
+        Assert.Equal(2, Drawn(Content(pdf)));
+        Assert.Single(Painted(pdf), IsTicked);
+    }
+
+    [Fact]
+    public void TheRightButtonOfANumberedGroupIsTheOneChosen()
+    {
+        // Selecting either end has to land on that end, or a group could pass the test above
+        // while always choosing the same button.
+        foreach (var (value, x) in new[] { ("Small", "20"), ("Large", "60") })
+        {
+            var pdf = MonitovoPdf.Fill(
+                SyntheticTemplate.WithNumberedRadioGroup(), fill => fill.SetChoice("size", value));
+
+            var content = Content(pdf);
+            var names = System.Text.RegularExpressions.Regex.Matches(content, @"1 0 0 1 (\d+) 80 cm (/MpState\d+) Do")
+                .ToDictionary(match => match.Groups[1].Value, match => match.Groups[2].Value);
+
+            var painted = Painted(pdf);
+            var ticked = System.Text.RegularExpressions.Regex.Match(
+                names[x], @"/MpState(\d+)").Groups[1].Value;
+
+            Assert.True(IsTicked(painted[int.Parse(ticked)]), $"'{value}' did not tick the button at x={x}.");
+        }
+    }
+
+    [Fact]
     public void InspectReportsWhatAFieldWillAccept()
     {
         // A caller should not have to guess the options, and they belong to the template.

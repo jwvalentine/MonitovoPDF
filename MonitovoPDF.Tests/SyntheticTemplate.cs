@@ -184,6 +184,32 @@ internal static class SyntheticTemplate
     }
 
     /// <summary>
+    /// Produces a radio group that lists its values in <c>/Opt</c> and names its button states
+    /// by number, which is the other shape a set of radio buttons comes in.
+    /// </summary>
+    /// <remarks>
+    /// The values a caller would use — "Small", "Large" — then appear nowhere near the buttons
+    /// themselves, so matching a chosen value to a button by the name of its state finds nothing
+    /// and quietly leaves the whole group unselected.
+    /// </remarks>
+    public static byte[] WithNumberedRadioGroup() => Assemble(
+    [
+        "<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R] /DA (/Helv 9 Tf 0 g) >> >>",
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << /Font << >> >> "
+            + "/Annots [5 0 R 6 0 R] >>",
+        "<< /FT /Btn /Ff 32768 /T (size) /Opt [(Small) (Large)] /Kids [5 0 R 6 0 R] >>",
+        "<< /Type /Annot /Subtype /Widget /Parent 4 0 R /Rect [20 80 32 92] /F 4 "
+            + "/AP << /N << /0 7 0 R /Off 8 0 R >> >> >>",
+        "<< /Type /Annot /Subtype /Widget /Parent 4 0 R /Rect [60 80 72 92] /F 4 "
+            + "/AP << /N << /1 7 0 R /Off 8 0 R >> >> >>",
+        "<< /Type /XObject /Subtype /Form /BBox [0 0 12 12] /Resources << >> /Length 44 >>\n"
+            + "stream\n0 g 2 2 8 8 re f 0 G 0.5 w 0 0 12 12 re S\nendstream",
+        "<< /Type /XObject /Subtype /Form /BBox [0 0 12 12] /Resources << >> /Length 28 >>\n"
+            + "stream\n0 G 0.5 w 0 0 12 12 re S\nendstream",
+    ]);
+
+    /// <summary>
     /// Produces a template with one image placeholder drawn under a transform given verbatim, so
     /// a test can stand a placeholder on its side or stretch it well out of proportion.
     /// </summary>
@@ -286,7 +312,7 @@ internal static class SyntheticTemplate
     }
 
     /// <summary>Serialises the objects with a correct cross-reference table.</summary>
-    private static byte[] Assemble(IReadOnlyList<string> bodies)
+    internal static byte[] Assemble(IReadOnlyList<string> bodies)
     {
         var document = new StringBuilder();
         document.Append("%PDF-1.7\n");
