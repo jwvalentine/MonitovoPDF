@@ -239,6 +239,37 @@ Text shrinks to fit rather than clipping, down to the floor. Images scale to fit
 centre, keeping aspect ratio, using pixel dimensions so a DPI value embedded in the image cannot
 change how large it lands.
 
+### Weight and colour
+
+A value is drawn the way its field asks to be drawn — including **bold, italic and colour**, which
+earlier versions read past. A field the designer set in bold now renders bold, and a field set in
+red renders red.
+
+That is a change in output for templates that specify either. Templates that don't are unaffected,
+and `Inspect` will tell you which yours are before you fill anything:
+
+```csharp
+var fields = MonitovoPdf.Inspect(templateBytes).Fields
+    .Where(f => f.IsBold || f.IsItalic || (f.Colour is not null && f.Colour != "#000000"));
+```
+
+A field naming black and a field naming nothing both render black, but they are reported apart —
+`Colour` describes what the template says, not what it comes to.
+
+`TextOptions` overrides either where a caller needs to, the same way it overrides family and size:
+
+```csharp
+fill.SetText("total", "£1,240.00", new TextOptions { Bold = true, Colour = "#C00000" });
+```
+
+Colours are `#RRGGBB`. Anything else is refused rather than ignored, because a value drawn in black
+when a colour was asked for is the kind of wrong that only shows up once it is printed.
+
+**A weight is only as available as the font is.** The resolver looks for a face by name — for a
+font directory that means `Family-Bold.ttf` beside `Family.ttf`. Where no bold face exists, the
+regular one is used and nothing fails, so a container serving fonts from a directory needs the
+bold files present as well as the regular ones.
+
 ### Fonts
 
 **On Windows the host's installed fonts are used automatically**, so nothing is needed to get

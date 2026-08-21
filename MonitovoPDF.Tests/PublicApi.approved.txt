@@ -113,8 +113,11 @@ namespace MonitovoPDF
         public TemplateField(string Name, TemplateFieldKind Kind, System.Collections.Generic.IReadOnlyList<FieldPlacement> Placements, string FontFamily, double FontSizePoints, TextAlignment Alignment, bool IsMultiline);
         public TemplateFieldKind Kind { get; init; }
         public TextAlignment Alignment { get; init; }
+        public bool IsBold { get; init; }
+        public bool IsItalic { get; init; }
         public bool IsMultiline { get; init; }
         public double FontSizePoints { get; init; }
+        public string Colour { get; init; }
         public string FontFamily { get; init; }
         public string Name { get; init; }
     }
@@ -169,8 +172,11 @@ namespace MonitovoPDF
     {
         public TextAlignment? Alignment { get; init; }
         public TextOptions();
+        public bool? Bold { get; init; }
+        public bool? Italic { get; init; }
         public bool? Multiline { get; init; }
         public double? FontSizePoints { get; init; }
+        public string Colour { get; init; }
         public string FontFamily { get; init; }
     }
 }

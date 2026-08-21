@@ -452,3 +452,39 @@ something the library failed to recognise.
 Removing it would also cost more than it saves: an enum member is public API, so deleting one
 forces a major version, and the result would be `/Sig` reporting as `Unknown` — a less accurate
 inventory in exchange for a neutrality that was never in question.
+
+## Decision 17 — Weight and colour — **DECIDED: honour what the field asks for**
+
+A default appearance string carries more than a font and a size. `/BaseFont /Helvetica-Bold` asks
+for a weight, and `1 0 0 rg` asks for red. Both were read past: the style suffix was stripped on
+the way to resolving a family, and only the `Tf` operator was parsed, so a field set in bold came
+out regular and a field set in red came out black.
+
+That is not a missing feature so much as a quiet infidelity. The value was right and the document
+was not what anyone drew, and the difference only shows when the result is put beside the design —
+which for a label estate signed off years ago may be never.
+
+Honouring both is the correct default because the template is where a document's appearance is
+designed. `TextOptions` overrides either, the same way it has always overridden family and size,
+so a caller who genuinely needs otherwise has the escape.
+
+**This changes output**, which almost nothing else in this project's history has. Templates naming
+neither are unaffected — the existing suite passed unchanged, which is the evidence for that — but
+a template naming either now produces a different document. So `Inspect` reports both, and the
+report is what makes the change checkable in advance rather than discoverable in print: a template
+estate can be searched for fields that are bold, italic, or coloured anything but black, before a
+single document is filled.
+
+Colour is reported and accepted as `#RRGGBB` rather than through a colour type of our own. It
+keeps the public surface free of the PDF engine's types, and a value read from one template can be
+handed straight to another without conversion. A colour that cannot be read is refused rather than
+ignored, since ignoring it draws in black and looks like it worked.
+
+A field naming black and a field naming nothing are reported apart. They render identically, but
+the report describes what the template says rather than what it comes to.
+
+**One thing this exposed about the tests.** The suite installed a single font file, so a request
+for bold resolved to the regular face and any assertion that bold had been honoured would have
+passed whatever the code did. A weight the suite cannot tell apart is a weight the suite is not
+testing, so a bold face is now a requirement of running the tests at all. The same applies in
+production: a font directory needs its `-Bold` files, or a weight silently degrades to regular.

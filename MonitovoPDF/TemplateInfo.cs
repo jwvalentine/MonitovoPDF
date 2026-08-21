@@ -61,6 +61,24 @@ public sealed record TemplateField(
     /// so this is the list <see cref="FillBuilder.SetChoice(string, string)"/> will accept.
     /// </remarks>
     public IReadOnlyList<string> Options { get; init; } = [];
+
+    /// <summary>Whether the field asks for a bold face.</summary>
+    public bool IsBold { get; init; }
+
+    /// <summary>Whether the field asks for an italic or oblique face.</summary>
+    public bool IsItalic { get; init; }
+
+    /// <summary>
+    /// The colour the field asks its text to be drawn in, as <c>#RRGGBB</c>, or null when it
+    /// asks for none.
+    /// </summary>
+    /// <remarks>
+    /// A field that names black and a field that names nothing both render black, but they are
+    /// reported apart because this describes what the template says rather than what it comes to.
+    /// So the fields worth looking at, when checking whether a template depends on colour, are
+    /// those whose colour is neither null nor <c>#000000</c>.
+    /// </remarks>
+    public string? Colour { get; init; }
 }
 
 /// <summary>Where one occurrence of a field sits on a page.</summary>

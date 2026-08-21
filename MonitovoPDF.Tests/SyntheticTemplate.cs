@@ -132,6 +132,32 @@ internal static class SyntheticTemplate
     }
 
     /// <summary>
+    /// Produces a template with one field whose default appearance is given verbatim, so a test
+    /// can say exactly what the designer asked for — a weight, a colour, or neither.
+    /// </summary>
+    /// <param name="appearance">
+    /// The <c>/DA</c> string, such as <c>"/F1 9 Tf 1 0 0 rg"</c> for red.
+    /// </param>
+    /// <param name="baseFont">The <c>/BaseFont</c> the resource resolves to, carrying any style.</param>
+    public static byte[] WithAppearance(string appearance, string baseFont = "Helvetica")
+    {
+        const int fieldNumber = FirstFieldNumber;
+        var fontNumber = fieldNumber + 1;
+
+        return Assemble(
+        [
+            $"<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [{fieldNumber} 0 R] "
+                + $"/DA ({appearance}) /DR << /Font << /F1 {fontNumber} 0 R >> >> >> >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] "
+                + $"/Resources << /Font << >> >> /Annots [{fieldNumber} 0 R] >>",
+            "<< /Type /Annot /Subtype /Widget /FT /Tx /T (value) /Rect [10 10 190 90] "
+                + $"/DA ({appearance}) /F 4 >>",
+            $"<< /Type /Font /Subtype /Type1 /BaseFont /{baseFont} >>",
+        ]);
+    }
+
+    /// <summary>
     /// Produces a template carrying a tick box, a dropdown and a pair of radio buttons — the
     /// field types a form is mostly made of, as opposed to the text fields a label uses.
     /// </summary>

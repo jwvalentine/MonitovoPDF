@@ -27,7 +27,15 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
 
     private sealed record Placement(
         PdfPage Page, XRect Bounds, string FontFamily, double FontSize, XStringAlignment Alignment,
-        bool IsMultiline);
+        bool IsMultiline)
+    {
+        public bool Bold { get; init; }
+
+        public bool Italic { get; init; }
+
+        /// <summary>The colour the field asks for, or null to draw in black.</summary>
+        public XColor? Colour { get; init; }
+    }
 
     /// <summary>A page's image placeholders, and where it draws them, as the template had them.</summary>
     private sealed record SlotSnapshot(
@@ -308,7 +316,7 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
                     }
                 }
 
-                var (family, size) = ReadAppearance(field, form, formAppearance);
+                var look = ReadAppearance(field, form, formAppearance);
                 var alignment = field.Elements.GetInteger("/Q") switch
                 {
                     1 => XStringAlignment.Center,
@@ -316,9 +324,14 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
                     _ => XStringAlignment.Near
                 };
 
-                var look = new Placement(
+                var placement = new Placement(
                     widgets[0].Page, ToCanvasRect(widgets[0].Widget.Elements.GetRectangle("/Rect"), widgets[0].Page),
-                    family, size, alignment, state.Chosen.Count > 1);
+                    look.Family!, look.Size!.Value, alignment, state.Chosen.Count > 1)
+                {
+                    Bold = look.Bold,
+                    Italic = look.Italic,
+                    Colour = look.Colour,
+                };
 
                 // A set of buttons listing its values in /Opt is matched by position, because the
                 // state names those buttons answer to are then the template's own business and
@@ -327,7 +340,7 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
                     ? permitted.IndexOf(state.Value ?? "")
                     : -1;
 
-                resolved.Add(new ResolvedState(name, state, isChoice, look, widgets, chosen));
+                resolved.Add(new ResolvedState(name, state, isChoice, placement, widgets, chosen));
             }
         }
 
@@ -439,7 +452,7 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
         PdfAcroForm form,
         string? formAppearance)
     {
-        var (family, fontSize) = ReadAppearance(field, form, formAppearance);
+        var look = ReadAppearance(field, form, formAppearance);
         var multiline = (field.Flags & PdfAcroFieldFlags.Multiline) != 0;
         var alignment = field.Elements.GetInteger("/Q") switch
         {
@@ -476,7 +489,12 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
             if (bounds.Width <= 0 || bounds.Height <= 0)
                 return;
 
-            placements.Add(new Placement(page, bounds, family, fontSize, alignment, multiline));
+            placements.Add(new Placement(page, bounds, look.Family!, look.Size!.Value, alignment, multiline)
+            {
+                Bold = look.Bold,
+                Italic = look.Italic,
+                Colour = look.Colour,
+            });
         }
     }
 
@@ -490,19 +508,23 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
     /// template is the designer's intent — a form laid out for Helvetica and drawn in something
     /// wider will wrap or shrink where the designer expected it to fit.
     /// </remarks>
-    private (string Family, double Size) ReadAppearance(
+    private FieldLook ReadAppearance(
         PdfAcroField field, PdfAcroForm form, string? formAppearance)
     {
-        var (family, size) = ReadFieldAppearance(field, form, formAppearance);
+        var look = ReadFieldAppearance(field, form, formAppearance);
 
-        return (family ?? _options.DefaultFontFamily, size ?? _options.DefaultFontSizePoints);
+        return look with
+        {
+            Family = look.Family ?? _options.DefaultFontFamily,
+            Size = look.Size ?? _options.DefaultFontSizePoints,
+        };
     }
 
     /// <summary>
     /// Reads what a field asks for without substituting anything, so a caller inspecting a
     /// template can tell "asks for nothing" apart from "asks for the default".
     /// </summary>
-    internal static (string? Family, double? Size) ReadFieldAppearance(
+    internal static FieldLook ReadFieldAppearance(
         PdfAcroField field, PdfAcroForm form, string? formAppearance)
     {
         var appearance = field.Elements.GetString("/DA");
@@ -510,12 +532,16 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
             appearance = formAppearance;
 
         if (string.IsNullOrWhiteSpace(appearance))
-            return (null, null);
+            return default;
 
-        var tokens = appearance.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var tokens = appearance.Split(
+            [' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
+
+        var colour = ColourIn(tokens);
+
         var operatorIndex = Array.IndexOf(tokens, "Tf");
         if (operatorIndex < 1)
-            return (null, null);
+            return new FieldLook(null, null, false, false, colour);
 
         var parsed = double.TryParse(
             tokens[operatorIndex - 1], NumberStyles.Float, CultureInfo.InvariantCulture, out var size);
@@ -524,18 +550,77 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
         double? resolvedSize = parsed && size > 0 ? size : null;
 
         var resource = operatorIndex >= 2 ? tokens[operatorIndex - 2] : null;
+        var (family, bold, italic) = ResolveFont(resource, field, form);
 
-        return (ResolveFamily(resource, field, form), resolvedSize);
+        return new FieldLook(family, resolvedSize, bold, italic, colour);
     }
 
     /// <summary>
-    /// Turns a default-appearance resource name such as "/Helv" into a font family, by looking it
-    /// up in the default resources the field or the form carries.
+    /// Reads the colour a default appearance sets for its text, if it sets one.
     /// </summary>
-    private static string? ResolveFamily(string? resource, PdfAcroField field, PdfAcroForm form)
+    /// <remarks>
+    /// A default appearance is a fragment of a content stream, so the colour arrives as one of
+    /// the operators that set a fill colour: <c>g</c> for grey, <c>rg</c> for red-green-blue,
+    /// <c>k</c> for the four inks a press uses. Ignoring them, as this did until now, meant a
+    /// field the designer set in red came out black — the value was right and the document was
+    /// not what anyone drew.
+    /// </remarks>
+    private static XColor? ColourIn(string[] tokens)
+    {
+        XColor? found = null;
+
+        for (var i = 0; i < tokens.Length; i++)
+        {
+            var operands = tokens[i] switch
+            {
+                "g" => 1,
+                "rg" => 3,
+                "k" => 4,
+                _ => 0,
+            };
+
+            if (operands == 0 || i < operands)
+                continue;
+
+            var numbers = new double[operands];
+            var complete = true;
+
+            for (var n = 0; n < operands && complete; n++)
+            {
+                complete = double.TryParse(
+                    tokens[i - operands + n], NumberStyles.Float, CultureInfo.InvariantCulture,
+                    out numbers[n]);
+            }
+
+            if (!complete)
+                continue;
+
+            // The last one set is the one in force when the text is drawn.
+            found = operands switch
+            {
+                1 => XColor.FromArgb(Level(numbers[0]), Level(numbers[0]), Level(numbers[0])),
+                3 => XColor.FromArgb(Level(numbers[0]), Level(numbers[1]), Level(numbers[2])),
+                _ => XColor.FromArgb(
+                    Level((1 - numbers[0]) * (1 - numbers[3])),
+                    Level((1 - numbers[1]) * (1 - numbers[3])),
+                    Level((1 - numbers[2]) * (1 - numbers[3]))),
+            };
+        }
+
+        return found;
+
+        static int Level(double value) => (int)Math.Round(Math.Clamp(value, 0, 1) * 255);
+    }
+
+    /// <summary>
+    /// Turns a default-appearance resource name such as "/Helv" into a family and a weight, by
+    /// looking it up in the default resources the field or the form carries.
+    /// </summary>
+    private static (string? Family, bool Bold, bool Italic) ResolveFont(
+        string? resource, PdfAcroField field, PdfAcroForm form)
     {
         if (string.IsNullOrWhiteSpace(resource) || resource[0] != '/')
-            return null;
+            return (null, false, false);
 
         // A field may carry its own resources; otherwise the form's apply.
         var fonts = Resources(field) ?? Resources(form);
@@ -543,7 +628,7 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
 
         var baseFont = font?.Elements.GetName("/BaseFont");
 
-        return string.IsNullOrWhiteSpace(baseFont) ? null : NormaliseBaseFont(baseFont);
+        return string.IsNullOrWhiteSpace(baseFont) ? (null, false, false) : SplitBaseFont(baseFont);
 
         static PdfDictionary? Resources(PdfDictionary source) =>
             source.Elements.GetDictionary("/DR")?.Elements.GetDictionary("/Font");
@@ -552,13 +637,22 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
     /// <summary>
     /// Reduces a PDF <c>/BaseFont</c> name to the font family to ask a resolver for.
     /// </summary>
+    internal static string NormaliseBaseFont(string baseFont) => SplitBaseFont(baseFont).Family;
+
+    /// <summary>
+    /// Separates a PDF <c>/BaseFont</c> name into the family and the weight it asks for.
+    /// </summary>
     /// <remarks>
-    /// A base font name carries more than a family. "ABCDEF+Arial-Bold" is a six-letter subset
-    /// tag, the family, and a style — and the renderer never asks for a styled face, so only the
-    /// middle part is wanted. The base-14 names are then mapped to something a host is likely to
-    /// have, because those are defined to be substituted rather than embedded.
+    /// A base font name carries more than a family: "ABCDEF+Arial-BoldItalic" is a six-letter
+    /// subset tag, a family and a style. The style used to be discarded, so a field the designer
+    /// set in bold was drawn in the regular face — a quiet difference that only shows when the
+    /// finished document is put next to the design.
+    /// <para>
+    /// The base-14 names are then mapped to families a host is likely to have, because those are
+    /// defined to be substituted rather than embedded.
+    /// </para>
     /// </remarks>
-    internal static string NormaliseBaseFont(string baseFont)
+    internal static (string Family, bool Bold, bool Italic) SplitBaseFont(string baseFont)
     {
         var name = baseFont.TrimStart('/');
 
@@ -566,12 +660,30 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
         if (name.Length > 7 && name[6] == '+')
             name = name[7..];
 
-        // Split off a style suffix, unless the whole name is one the alias table knows.
+        // Split off a style suffix, unless the whole name is one the alias table knows: some of
+        // the base-14 names contain a dash that is part of the name rather than a style.
+        var style = "";
         var dash = name.IndexOf('-');
         if (dash > 0 && !BaseFontAliases.ContainsKey(name))
+        {
+            style = name[(dash + 1)..];
             name = name[..dash];
+        }
 
-        return BaseFontAliases.GetValueOrDefault(name, name);
+        // "Oblique" is what the base-14 names call italic, and a comma is the other separator
+        // in use — "Arial,Bold" appears as often as "Arial-Bold".
+        var comma = name.IndexOf(',');
+        if (comma > 0)
+        {
+            style = name[(comma + 1)..];
+            name = name[..comma];
+        }
+
+        return (
+            BaseFontAliases.GetValueOrDefault(name, name),
+            style.Contains("Bold", StringComparison.OrdinalIgnoreCase),
+            style.Contains("Italic", StringComparison.OrdinalIgnoreCase)
+                || style.Contains("Oblique", StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
@@ -579,13 +691,23 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
     /// host does not have. Each missing family is attempted once and then remembered, because the
     /// underlying failure is an exception and a label may have many fields.
     /// </summary>
-    private XFont CreateFont(string family, double size)
+    private XFont CreateFont(string family, double size, bool bold = false, bool italic = false)
     {
+        var style = (bold, italic) switch
+        {
+            (true, true) => XFontStyleEx.BoldItalic,
+            (true, false) => XFontStyleEx.Bold,
+            (false, true) => XFontStyleEx.Italic,
+            _ => XFontStyleEx.Regular,
+        };
+
+        // A family that is missing in one weight is missing in all of them as far as this cache
+        // is concerned, because the resolver is asked for the family and answers for the face.
         if (!_unavailableFamilies.Contains(family))
         {
             try
             {
-                return new XFont(family, size);
+                return new XFont(family, size, style);
             }
             catch (Exception)
             {
@@ -593,7 +715,7 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
             }
         }
 
-        return new XFont(_options.DefaultFontFamily, size);
+        return new XFont(_options.DefaultFontFamily, size, style);
     }
 
     /// <summary>
@@ -620,20 +742,40 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
         var family = overrides?.FontFamily ?? placement.FontFamily;
         var size = overrides?.FontSizePoints ?? placement.FontSize;
         var alignment = overrides?.Alignment is { } requested ? Convert(requested) : placement.Alignment;
+        var bold = overrides?.Bold ?? placement.Bold;
+        var italic = overrides?.Italic ?? placement.Italic;
+        var brush = BrushFor(overrides?.Colour is { } wanted ? ParseColour(wanted) : placement.Colour);
 
         // A value spanning lines has to wrap whatever the field says, or the extra lines are lost.
         var multiline = overrides?.Multiline ?? (placement.IsMultiline || value.Contains('\n'));
 
         if (multiline)
         {
-            DrawWrapped(canvas, placement, value, family, size, alignment);
+            DrawWrapped(canvas, placement, value, family, size, alignment, bold, italic, brush);
             return;
         }
 
-        var font = FitToWidth(canvas, value, family, size, placement.Bounds.Width);
+        var font = FitToWidth(canvas, value, family, size, placement.Bounds.Width, bold, italic);
         var format = new XStringFormat { Alignment = alignment, LineAlignment = XLineAlignment.Center };
 
-        canvas.DrawString(value, font, XBrushes.Black, placement.Bounds, format);
+        canvas.DrawString(value, font, brush, placement.Bounds, format);
+    }
+
+    /// <summary>Black unless the template or the caller asked for something else.</summary>
+    private static XBrush BrushFor(XColor? colour) =>
+        colour is { } wanted ? new XSolidBrush(wanted) : XBrushes.Black;
+
+    /// <summary>Reads a <c>#RRGGBB</c> colour, or null when it is not one.</summary>
+    internal static XColor? ParseColour(string? value)
+    {
+        if (value is null || value.Length != 7 || value[0] != '#')
+            return null;
+
+        return int.TryParse(value[1..3], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var r)
+            && int.TryParse(value[3..5], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var g)
+            && int.TryParse(value[5..7], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var b)
+                ? XColor.FromArgb(r, g, b)
+                : null;
     }
 
     private static XStringAlignment Convert(TextAlignment alignment) => alignment switch
@@ -648,10 +790,11 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
     /// field rather than only its widest line.
     /// </summary>
     private void DrawWrapped(
-        XGraphics canvas, Placement placement, string value, string family, double size, XStringAlignment alignment)
+        XGraphics canvas, Placement placement, string value, string family, double size,
+        XStringAlignment alignment, bool bold, bool italic, XBrush brush)
     {
         var bounds = placement.Bounds;
-        var font = CreateFont(family, size);
+        var font = CreateFont(family, size, bold, italic);
         var lines = Wrap(canvas, value, font, bounds.Width);
 
         // Shrink on height as well as width: wrapping trades one for the other, so a block can fit
@@ -660,7 +803,7 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
                && lines.Count * font.GetHeight() > bounds.Height)
         {
             size -= 0.5;
-            font = CreateFont(family, size);
+            font = CreateFont(family, size, bold, italic);
             lines = Wrap(canvas, value, font, bounds.Width);
         }
 
@@ -676,7 +819,7 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
             if (y + lineHeight > bounds.Y + bounds.Height + 0.01)
                 break;
 
-            canvas.DrawString(line, font, XBrushes.Black, new XRect(bounds.X, y, bounds.Width, lineHeight), format);
+            canvas.DrawString(line, font, brush, new XRect(bounds.X, y, bounds.Width, lineHeight), format);
             y += lineHeight;
         }
     }
@@ -721,18 +864,20 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
     /// Shrinks the font until the value fits the field width, down to the configured floor. A
     /// label that silently clips a part number is worse than one set slightly smaller.
     /// </summary>
-    private XFont FitToWidth(XGraphics canvas, string value, string family, double size, double width)
+    private XFont FitToWidth(
+        XGraphics canvas, string value, string family, double size, double width,
+        bool bold = false, bool italic = false)
     {
         while (size > _options.MinimumFontSizePoints)
         {
-            var candidate = CreateFont(family, size);
+            var candidate = CreateFont(family, size, bold, italic);
             if (canvas.MeasureString(value, candidate).Width <= width)
                 return candidate;
 
             size -= 0.5;
         }
 
-        return CreateFont(family, _options.MinimumFontSizePoints);
+        return CreateFont(family, _options.MinimumFontSizePoints, bold, italic);
     }
 
     private void DrawImage(XGraphics canvas, Placement placement, byte[] value, string fieldName)
