@@ -15,6 +15,7 @@ public sealed class FillBuilder
     private readonly Dictionary<string, TextContent> _text = new(StringComparer.Ordinal);
     private readonly Dictionary<string, byte[]> _images = new(StringComparer.Ordinal);
     private readonly Dictionary<string, BarcodeContent> _barcodes = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, FieldState> _states = new(StringComparer.Ordinal);
     private readonly Dictionary<(int Page, int Index), ImageSlotContent> _slots = [];
 
     internal IReadOnlyDictionary<string, TextContent> Text => _text;
@@ -23,9 +24,12 @@ public sealed class FillBuilder
 
     internal IReadOnlyDictionary<string, BarcodeContent> Barcodes => _barcodes;
 
+    internal IReadOnlyDictionary<string, FieldState> States => _states;
+
     internal IReadOnlyDictionary<(int Page, int Index), ImageSlotContent> Slots => _slots;
 
-    internal int Count => _text.Count + _images.Count + _barcodes.Count + _slots.Count;
+    internal int Count =>
+        _text.Count + _images.Count + _barcodes.Count + _slots.Count + _states.Count;
 
     /// <summary>Draws <paramref name="value"/> into the field called <paramref name="field"/>.</summary>
     /// <remarks>
@@ -74,6 +78,69 @@ public sealed class FillBuilder
         Check(value, options);
 
         _barcodes[field] = new BarcodeContent(BarcodeSymbology.For(type), value, options);
+        return this;
+    }
+
+    /// <summary>
+    /// Ticks or clears a tick box.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The box is drawn as the template draws it — its own tick, in its own box, at its own
+    /// weight — rather than as a character this library chooses. A box the template gives no
+    /// artwork for falls back to a drawn outline and cross.
+    /// </para>
+    /// <para>
+    /// Clearing a box is not the same as leaving it alone. A box left alone keeps whatever state
+    /// the template shipped it in, which for some templates is ticked.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentException">The field name is empty, or already has a value.</exception>
+    public FillBuilder SetCheckbox(string field, bool ticked)
+    {
+        Claim(field);
+        _states[field] = new FieldState(ticked ? null : FieldAppearances.OffState, Ticked: ticked);
+
+        return this;
+    }
+
+    /// <summary>
+    /// Selects one of the options a dropdown, list box or set of radio buttons offers.
+    /// </summary>
+    /// <remarks>
+    /// The options belong to the template rather than to the caller: a dropdown carries its own
+    /// list, and a set of radio buttons is defined by the states its buttons answer to. So this
+    /// chooses from what is already there, and a value that is not among them is refused rather
+    /// than drawn — a form recording an answer it does not offer is worse than one that fails.
+    /// <see cref="TemplateField.Options"/> reports what a given field will accept.
+    /// </remarks>
+    /// <exception cref="ArgumentException">The field name or value is empty, or already set.</exception>
+    public FillBuilder SetChoice(string field, string value)
+    {
+        Claim(field);
+        ArgumentException.ThrowIfNullOrEmpty(value);
+
+        _states[field] = new FieldState(value, Ticked: null);
+        return this;
+    }
+
+    /// <summary>
+    /// Selects several options at once, for a list box that permits more than one.
+    /// </summary>
+    /// <exception cref="ArgumentException">
+    /// No values were given, the field name is empty, or the field already has a value.
+    /// </exception>
+    public FillBuilder SetChoice(string field, IEnumerable<string> values)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+
+        var chosen = values.ToList();
+        if (chosen.Count == 0 || chosen.Any(string.IsNullOrEmpty))
+            throw new ArgumentException("A choice needs at least one non-empty value.", nameof(values));
+
+        Claim(field);
+        _states[field] = new FieldState(chosen[0], Ticked: null) { Values = chosen };
+
         return this;
     }
 
@@ -170,7 +237,8 @@ public sealed class FillBuilder
         if (string.IsNullOrWhiteSpace(field))
             throw new ArgumentException("A field name is required.", nameof(field));
 
-        if (_text.ContainsKey(field) || _images.ContainsKey(field) || _barcodes.ContainsKey(field))
+        if (_text.ContainsKey(field) || _images.ContainsKey(field)
+            || _barcodes.ContainsKey(field) || _states.ContainsKey(field))
             throw new ArgumentException($"Field '{field}' already has a value.", nameof(field));
     }
 }

@@ -115,6 +115,45 @@ foreach (var image in MonitovoPdf.Inspect(templateBytes).Pages[0].Images)
     Console.WriteLine($"{image.Index}: {image.ResourceName} {image.PixelWidth}x{image.PixelHeight}");
 ```
 
+### Tick boxes, dropdowns and radio buttons
+
+A form is mostly not text fields. PDF defines four field types and this fills three of them —
+text, buttons and choices — leaving only signature fields, which are a different problem.
+
+```csharp
+byte[] pdf = MonitovoPdf.Fill(templateBytes, fill =>
+{
+    fill.SetCheckbox("agree", true);            // straight from a bool, or a 1/0 in your data
+    fill.SetChoice("country", "Ireland");       // a dropdown, or a set of radio buttons
+    fill.SetChoice("sizes", ["S", "M"]);        // a list box permitting more than one
+});
+```
+
+**A tick box is drawn from the template's own artwork.** A box carries a small piece of drawing
+for each state it can be in, and the tick, the box around it and the weight of both belong to
+whoever designed the form. So filling one paints the state you asked for rather than stamping a
+character this library chose. Where a template supplies no artwork — some authoring tools leave
+the drawing to the viewer — the fallback is an outlined box with a cross in it.
+
+**Clearing a box is not the same as leaving it alone.** A box you never mention keeps whatever
+state the template shipped it in, which for some templates is ticked. And an unticked box is
+still *painted*, because the outline usually lives in the widget rather than in the page, so
+flattening would otherwise make the box disappear entirely.
+
+**The options belong to the template.** A dropdown carries its own list; a set of radio buttons
+is defined by the states its buttons answer to. You choose from what is already there, and a
+value the field does not offer is refused rather than drawn — a form recording an answer it never
+offered is worse than one that fails, because it looks completed. `Inspect` reports what each
+field will accept:
+
+```csharp
+foreach (var field in MonitovoPdf.Inspect(templateBytes).Fields.Where(f => f.Options.Count > 0))
+    Console.WriteLine($"{field.Name}: {string.Join(", ", field.Options)}");
+```
+
+Since the output is flat, the chosen option lands on the page as text where the control used to
+be, drawn in the font and alignment the field asked for.
+
 ### Reading a template
 
 `Inspect` reports a template's pages and fields without filling anything — the page size, what

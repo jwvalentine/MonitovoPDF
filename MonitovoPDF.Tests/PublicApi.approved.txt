@@ -45,6 +45,9 @@ namespace MonitovoPDF
     {
         public FillBuilder SetBarcode(string field, BarcodeType type, string value, BarcodeOptions options = null);
         public FillBuilder SetBarcodeAt(int pageNumber, int imageIndex, BarcodeType type, string value, BarcodeOptions options = null);
+        public FillBuilder SetCheckbox(string field, bool ticked);
+        public FillBuilder SetChoice(string field, System.Collections.Generic.IEnumerable<string> values);
+        public FillBuilder SetChoice(string field, string value);
         public FillBuilder SetImage(string field, System.IO.Stream image);
         public FillBuilder SetImage(string field, byte[] image);
         public FillBuilder SetImageAt(int pageNumber, int imageIndex, System.IO.Stream image);
@@ -106,6 +109,7 @@ namespace MonitovoPDF
     public sealed class TemplateField : IEquatable<TemplateField>
     {
         public System.Collections.Generic.IReadOnlyList<FieldPlacement> Placements { get; init; }
+        public System.Collections.Generic.IReadOnlyList<string> Options { get; init; }
         public TemplateField(string Name, TemplateFieldKind Kind, System.Collections.Generic.IReadOnlyList<FieldPlacement> Placements, string FontFamily, double FontSizePoints, TextAlignment Alignment, bool IsMultiline);
         public TemplateFieldKind Kind { get; init; }
         public TextAlignment Alignment { get; init; }

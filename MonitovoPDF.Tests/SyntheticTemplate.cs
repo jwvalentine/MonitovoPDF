@@ -132,6 +132,58 @@ internal static class SyntheticTemplate
     }
 
     /// <summary>
+    /// Produces a template carrying a tick box, a dropdown and a pair of radio buttons — the
+    /// field types a form is mostly made of, as opposed to the text fields a label uses.
+    /// </summary>
+    /// <param name="withArtwork">
+    /// Whether the tick box carries appearance streams for its states. Templates from tools that
+    /// expect the viewer to draw their controls do not, which is the case that has to fall back.
+    /// </param>
+    public static byte[] WithFormControls(bool withArtwork = true)
+    {
+        // 4 catalog is 1..3; the fields are 4 (box), 5 (choice), 6 (radio group), the radio
+        // widgets 7 and 8, and the two appearance streams 9 and 10.
+        const string tickArtwork =
+            "<< /Type /XObject /Subtype /Form /BBox [0 0 12 12] /Resources << >> /Length 44 >>\n"
+            + "stream\n0 g 2 2 8 8 re f 0 G 0.5 w 0 0 12 12 re S\nendstream";
+
+        const string emptyArtwork =
+            "<< /Type /XObject /Subtype /Form /BBox [0 0 12 12] /Resources << >> /Length 28 >>\n"
+            + "stream\n0 G 0.5 w 0 0 12 12 re S\nendstream";
+
+        var appearance = withArtwork ? " /AP << /N << /Yes 9 0 R /Off 10 0 R >> >>" : "";
+
+        var bodies = new List<string>
+        {
+            "<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R 5 0 R 6 0 R] "
+                + "/DA (/Helv 9 Tf 0 g) >> >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << /Font << >> >> "
+                + "/Annots [4 0 R 5 0 R 7 0 R 8 0 R] >>",
+
+            // A tick box: one widget, whose two states the template names.
+            "<< /Type /Annot /Subtype /Widget /FT /Btn /T (agree) /Rect [20 160 32 172] "
+                + $"/DA (/Helv 9 Tf 0 g) /V /Off /F 4{appearance} >>",
+
+            // A dropdown, carrying the list of what it will accept.
+            "<< /Type /Annot /Subtype /Widget /FT /Ch /T (country) /Rect [20 120 160 140] "
+                + "/DA (/Helv 9 Tf 0 g) /Opt [(Ireland) (Portugal) (Japan)] /F 4 >>",
+
+            // A radio group: one field, two widgets, each answering to its own state name.
+            "<< /FT /Btn /Ff 32768 /T (size) /DA (/Helv 9 Tf 0 g) /Kids [7 0 R 8 0 R] >>",
+            "<< /Type /Annot /Subtype /Widget /Parent 6 0 R /Rect [20 80 32 92] /F 4 "
+                + "/AP << /N << /Small 9 0 R /Off 10 0 R >> >> >>",
+            "<< /Type /Annot /Subtype /Widget /Parent 6 0 R /Rect [60 80 72 92] /F 4 "
+                + "/AP << /N << /Large 9 0 R /Off 10 0 R >> >> >>",
+
+            tickArtwork,
+            emptyArtwork,
+        };
+
+        return Assemble(bodies);
+    }
+
+    /// <summary>
     /// Produces a template with one image placeholder drawn under a transform given verbatim, so
     /// a test can stand a placeholder on its side or stretch it well out of proportion.
     /// </summary>

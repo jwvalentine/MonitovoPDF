@@ -72,3 +72,24 @@ internal sealed record BarcodeContent(BarcodeSymbology Symbology, string Value, 
 
 /// <summary>Text to draw into a field, with any caller overrides for how it should look.</summary>
 internal sealed record TextContent(string Value, TextOptions? Options);
+
+/// <summary>
+/// A state to put a field into: a box ticked or cleared, or an option chosen.
+/// </summary>
+/// <param name="Value">
+/// The option chosen, or the off state for a cleared box. Null means "whichever state this
+/// widget calls ticked", which only the widget itself can say.
+/// </param>
+/// <param name="Ticked">
+/// Set for a tick box, so a box can be told apart from a choice that happens to be named the
+/// same thing as one. Null for a choice.
+/// </param>
+internal sealed record FieldState(string? Value, bool? Ticked)
+{
+    /// <summary>Every option chosen, for a list box permitting more than one.</summary>
+    public IReadOnlyList<string> Values { get; init; } = [];
+
+    /// <summary>The options to draw, which for a single choice is just the one.</summary>
+    public IReadOnlyList<string> Chosen =>
+        Values.Count > 0 ? Values : Value is null ? [] : [Value];
+}

@@ -25,6 +25,15 @@ public sealed record RenderLabelRequest
 
     /// <summary>Barcodes replacing placeholders addressed by page and position.</summary>
     public List<BarcodeAtRequest>? BarcodesAt { get; init; }
+
+    /// <summary>Tick boxes to tick or clear, keyed by field name.</summary>
+    public Dictionary<string, bool>? Checkboxes { get; init; }
+
+    /// <summary>
+    /// Options to select, keyed by field name. A list, because a list box may permit more than
+    /// one; a dropdown or a set of radio buttons takes exactly one.
+    /// </summary>
+    public Dictionary<string, List<string>>? Choices { get; init; }
 }
 
 /// <summary>An image replacing a placeholder addressed by position rather than by field name.</summary>
@@ -84,7 +93,9 @@ public sealed record DecodedLabelRequest(
     IReadOnlyDictionary<string, string> Text,
     IReadOnlyDictionary<string, byte[]> Images,
     IReadOnlyDictionary<string, BarcodeSpec> Barcodes,
-    IReadOnlyList<SlotSpec> Slots);
+    IReadOnlyList<SlotSpec> Slots,
+    IReadOnlyDictionary<string, bool> Checkboxes,
+    IReadOnlyDictionary<string, IReadOnlyList<string>> Choices);
 
 public static class RenderLabelRequestDecoder
 {
@@ -104,15 +115,27 @@ public static class RenderLabelRequestDecoder
         var text = request.Fields ?? [];
         var images = request.Images ?? [];
         var barcodes = request.Barcodes ?? [];
+        var checkboxes = request.Checkboxes ?? [];
+        var choices = request.Choices ?? [];
 
         if (string.IsNullOrWhiteSpace(request.Template))
             errors.Add("A base64-encoded template is required.");
 
-        if (text.Count + images.Count + barcodes.Count > options.MaxFieldCount)
+        if (text.Count + images.Count + barcodes.Count + checkboxes.Count + choices.Count
+            > options.MaxFieldCount)
+        {
             errors.Add($"A request may populate at most {options.MaxFieldCount} fields.");
+        }
+
+        foreach (var (name, values) in choices)
+        {
+            if (values is null || values.Count == 0 || values.Any(string.IsNullOrEmpty))
+                errors.Add($"The choice for field '{name}' has no value.");
+        }
 
         // A field may be given a value once. Anything else is ambiguous about what to draw.
-        var claimed = text.Keys.Concat(images.Keys).Concat(barcodes.Keys);
+        var claimed = text.Keys.Concat(images.Keys).Concat(barcodes.Keys)
+            .Concat(checkboxes.Keys).Concat(choices.Keys);
         foreach (var name in claimed.GroupBy(name => name, StringComparer.Ordinal)
                      .Where(group => group.Count() > 1)
                      .Select(group => group.Key)
@@ -204,7 +227,10 @@ public static class RenderLabelRequestDecoder
         if (errors.Count > 0)
             return false;
 
-        decoded = new DecodedLabelRequest(templateBytes, text, decodedImages, decodedBarcodes, slots);
+        decoded = new DecodedLabelRequest(
+            templateBytes, text, decodedImages, decodedBarcodes, slots,
+            checkboxes,
+            choices.ToDictionary(entry => entry.Key, entry => (IReadOnlyList<string>)entry.Value, StringComparer.Ordinal));
         return true;
     }
 

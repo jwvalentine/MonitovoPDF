@@ -367,3 +367,88 @@ not shown. The number a person reads off the label is the number they were given
 printing a longer one underneath would send them looking for something that does not exist.
 EAN and UPC prescribe a grouped layout and an outset digit; that is not attempted, and a caller
 needing it should say so.
+
+## Decision 15 — The other field types — **DECIDED: paint the template's own artwork**
+
+A template arrives, its fields are filled from whatever the data system holds, and the result is
+flat. Nothing about that changes with what the template depicts — a label and a claim form are
+the same operation. Which made it awkward that the library implemented one of the four field
+types PDF defines, and awkward in a way that only showed up on the forms: text is most of a
+label and almost none of a business form, where tick boxes and dropdowns carry the answers.
+
+Buttons and choices are now filled. Signature fields are not; see below.
+
+**A tick box is drawn from the template's own artwork.** A widget carries a small form XObject
+per state, and the tick, the box and the weight of both are the designer's. Painting the state
+asked for is therefore both the faithful answer and the simpler one — the alternative is
+choosing a glyph, a size and a stroke width that the template already decided. Mapping it onto
+the widget's rectangle follows the mapping the specification prescribes for exactly this, which
+is what makes the result identical to what a viewer would have shown.
+
+That also repairs something flattening quietly broke. A box's outline usually lives in the
+widget rather than in the page, so removing the form removed the box. An unticked box is
+therefore painted rather than skipped, and "clear this box" is a different instruction from
+"leave this box alone" — a template may ship one ticked.
+
+**The options belong to the template.** A dropdown carries `/Opt`; a radio group is defined by
+the states its widgets answer to. A caller chooses from what is there, and a value the field
+does not offer is refused. A form recording an answer it never offered is worse than one that
+fails, because it looks completed. `Inspect` reports the list so a caller need not guess it.
+
+The choice itself is drawn as text where the control was, because flattening removes the
+control that would have shown it.
+
+**Verified against a real tool, which mattered.** LibreOffice writes `/Opt` as UTF-16 hex
+strings rather than as literals — a synthesised fixture using literals would have passed while
+the real thing failed. It also confirmed that a real authoring tool does write per-state
+artwork, which the whole approach depends on. The end-to-end check now fills a LibreOffice form
+and measures the rasterised page: the ticked document carries more ink than the cleared one,
+which is the only way to assert a tick from the outside.
+
+Signature fields are not filled. See Decision 16.
+
+## Decision 16 — Signatures — **DECIDED: no involvement, in either direction**
+
+This library does not create signatures, does not verify them, does not inspect a document for
+them and does not refuse one that carries them. Signatures are simply not a thing it has an
+opinion about.
+
+**The layering is what settles it.** Signing attests to a finished document, and finishing the
+document is where this library's job ends. `Fill` returns bytes; anything that signs takes bytes.
+So signing after us is not a workaround, it is the natural order — nothing is lost by our staying
+out, and a caller who needs it has PDFsharp's own signer already in their dependency graph, or a
+product built for it.
+
+**The dependency was never the constraint**, which is worth recording because it looks like one.
+PDFsharp ships a signer, and that is why `System.Security.Cryptography.Pkcs` appears in the
+graph. What actually stops it is that signing is asynchronous throughout where this API is
+synchronous by design (Decision 2); that it takes a private key, into a library that handles no
+secrets; and that timestamping reaches an external server, from a library that opens no sockets.
+None of that is difficulty. It is a different job.
+
+**A signature image is not a signature, and is already supported.** A picture of somebody's
+handwriting dropped into a signature block is `SetImage` — an image in a field, nothing
+cryptographic, and the right answer for the very common form that just needs the block filled.
+
+**An attestation without cryptography behind it was considered and rejected.** Drawing "signed at
+14:32, hash 8f3a…" onto the page proves nothing: the document can be edited afterwards and the
+block still says it. It is a claim rendered to look like evidence, which is worse than drawing
+nothing, and building it honestly would mean building the thing above.
+
+**Known consequence, accepted.** Filling a template that is already signed produces output whose
+signature no longer validates, and nothing in the output says so. That follows from rewriting the
+document rather than appending to it — commercial libraries sign by incremental update, leaving
+the original bytes untouched, which is the capability that would make filling a signed document
+survivable and which PDFsharp does not have. Detecting and refusing such a template was proposed
+and deliberately not adopted: it is a guard against a case this library is not built to serve, and
+carrying signature-awareness in order to say no is still carrying signature-awareness.
+
+**`TemplateFieldKind.Signature` stays, and reporting it is not involvement.** `Inspect` is an
+inventory of what a template contains, not a list of what can be filled. `Unknown` has always
+been in that enum and has never been fillable either; nobody reads it as an offer. `Signature`
+is the same category and strictly more useful, because a caller can tell a signature block from
+something the library failed to recognise.
+
+Removing it would also cost more than it saves: an enum member is public API, so deleting one
+forces a major version, and the result would be `/Sig` reporting as `Unknown` — a less accurate
+inventory in exchange for a neutrality that was never in question.

@@ -77,6 +77,12 @@ app.MapPost("/v1/labels", async (
             foreach (var (field, barcode) in decoded.Barcodes)
                 fill.SetBarcode(field, barcode.Type, barcode.Value, barcode.Options);
 
+            foreach (var (field, ticked) in decoded.Checkboxes)
+                fill.SetCheckbox(field, ticked);
+
+            foreach (var (field, values) in decoded.Choices)
+                fill.SetChoice(field, values);
+
             foreach (var slot in decoded.Slots)
             {
                 if (slot.Barcode is { } barcode)
@@ -91,7 +97,8 @@ app.MapPost("/v1/labels", async (
         logger.LogInformation(
             "Rendered a label from a {TemplateBytes} byte template into {PdfBytes} bytes across {FieldCount} field(s).",
             decoded.Template.Length, pdf.Length,
-            decoded.Text.Count + decoded.Images.Count + decoded.Barcodes.Count + decoded.Slots.Count);
+            decoded.Text.Count + decoded.Images.Count + decoded.Barcodes.Count
+            + decoded.Slots.Count + decoded.Checkboxes.Count + decoded.Choices.Count);
 
         return Results.File(pdf, "application/pdf", "label.pdf");
     }
