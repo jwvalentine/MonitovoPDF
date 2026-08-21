@@ -3,9 +3,10 @@
 MonitovoPDF is released under the [MIT License](LICENSE). It redistributes the third-party
 works listed below, each under its own terms, which are reproduced here in full.
 
-This file is included in the container image. Do not strip it, and do not remove
-`/usr/share/doc` from the image — several of these licences require their notice to travel
-with the copies.
+This file travels with both things a consumer receives: it is packed into the NuGet package
+alongside `licenses/Apache-2.0.txt`, and copied into the container image. Do not strip it, and
+do not remove `/usr/share/doc` from the image — several of these licences require their notice
+to travel with the copies.
 
 ---
 
@@ -77,8 +78,9 @@ and text would otherwise fail to draw on a host that has none:
 
 <https://dejavu-fonts.github.io/>
 
-Note the clause below permitting sale only as part of a larger package: the fonts are
-redistributed here as a component of the service image, never on their own.
+Note the clause below permitting sale only as part of a larger package. Both routes satisfy it:
+the font is a resource compiled into the library assembly, and a component of the container
+image. It is never distributed as a font on its own.
 
 ```
 Copyright (c) 2003 by Bitstream, Inc. All Rights Reserved.
@@ -139,17 +141,38 @@ Nothing below is shipped to consumers. It is listed so the distinction is on the
 | Component | Licence | Where |
 |---|---|---|
 | xUnit | Apache-2.0 | test project |
+| xunit.runner.visualstudio | Apache-2.0 | test project |
+| Microsoft.NET.Test.Sdk | MIT | test project |
 | Microsoft.AspNetCore.Mvc.Testing | MIT | test project |
+| coverlet.collector | MIT | test project |
 | LibreOffice Writer | MPL-2.0 | `integration/` image |
 | python3-uno | MPL-2.0 | `integration/` image |
+| python3 | PSF-2.0 | `integration/` image |
+| ca-certificates | GPL-2+ and MPL-2.0 | `integration/` image |
 | poppler-utils | **GPL-2 or GPL-3** | `integration/` image |
+| zbar-tools | **LGPL-2.1-or-later** | `integration/` image |
+| dmtx-utils | **LGPL-2+** (`libdmtx0b` itself is BSD-2-Clause) | `integration/` image |
+| zxing-cpp | Apache-2.0 | `integration/` image |
+| pypdfium2 | BSD-3-Clause / Apache-2.0 | `integration/` image |
+| pillow | MIT-CMU | `integration/` image |
 
-### On poppler and the integration image
+The licences of the Debian packages were read from each package's own
+`/usr/share/doc/<package>/copyright` inside the built image, and those of the Python packages
+from their installed distribution metadata, rather than from a summary elsewhere.
 
-The `integration/` image contains **copyleft software**: poppler-utils is GPL-2 or GPL-3.
-This does not affect MonitovoPDF or the runtime image. `pdftotext` is invoked as a separate
-process by a test script; nothing in it is linked into, derived from, or distributed with
-the service, and the GPL does not reach across that boundary.
+### On the copyleft tools in the integration image
+
+The `integration/` image contains **copyleft software**: poppler-utils is GPL-2 or GPL-3, and
+both zbar-tools and dmtx-utils are LGPL. This does not affect MonitovoPDF or the runtime image.
+Every one of them is invoked as a separate process by a test script — `pdftotext` to read text
+back, `zbarimg` and `dmtxread` to decode barcodes — and nothing in any of them is linked into,
+derived from, or distributed with the library or the service. Neither the GPL nor the LGPL
+reaches across that boundary.
+
+That these are the decoders is the point of them. A barcode checked by the same library that
+drew it proves only that the code agrees with itself, so the verification is worth having only
+if it comes from somewhere else entirely — which in practice means the established free
+implementations, and those carry the licences they carry.
 
 That holds only while the image stays a local test harness. **Publishing the `integration/`
 image would be distributing GPL software** and would bring the GPL's own distribution
@@ -161,16 +184,28 @@ deliberately rather than by habit.
 ## Copyleft position
 
 MonitovoPDF is MIT and intended to be embedded in commercial products, so nothing may place a
-copyleft obligation on it or on a consumer. The position as audited on 2026-08-20:
+copyleft obligation on it or on a consumer. The position as audited on 2026-08-21, against the
+resolved dependency graph and the copyright files inside the built images rather than against
+package summaries:
 
 **No GPL, LGPL or AGPL code is compiled into, linked into, or derived from this project.**
 
-* **Managed dependencies.** The service resolves to exactly three NuGet packages: PDFsharp
-  (MIT), ZXing.Net (Apache-2.0) and System.Security.Cryptography.Pkcs (MIT). There is
-  nothing else in the runtime graph — ZXing.Net's core package brings no dependencies of its
-  own, which is why it was chosen over barcode libraries that pull in an imaging stack.
-  Apache-2.0 is permissive, not copyleft.
-* **Native linkage.** The service process links only against glibc (`libc`, `libdl`,
+* **Managed dependencies.** A consumer of the library receives five NuGet packages in total,
+  on both `net8.0` and `net10.0`. Two are referenced directly and three arrive through
+  PDFsharp:
+
+  | Package | Licence | How it arrives |
+  |---|---|---|
+  | PDFsharp 6.2.4 | MIT | referenced directly |
+  | ZXing.Net 0.16.11 | Apache-2.0 | referenced directly |
+  | System.Security.Cryptography.Pkcs 8.0.1 | MIT | via PDFsharp |
+  | Microsoft.Extensions.DependencyInjection.Abstractions 8.0.2 | MIT | via PDFsharp |
+  | Microsoft.Extensions.Logging.Abstractions 8.0.3 | MIT | via PDFsharp |
+
+  That is the whole graph. ZXing.Net's core package brings no dependencies of its own, which
+  is why it was chosen over barcode libraries that pull in an imaging stack. Apache-2.0 is
+  permissive, not copyleft, and the three Microsoft packages are MIT.
+* **Native linkage.** In the runtime image, the process links only against glibc (`libc`, `libdl`,
   `libm`, `libpthread`, `librt`, `ld-linux`) and the GCC runtime (`libstdc++`, `libgcc_s`).
   glibc is LGPL-2.1, which permits dynamic linking without any reciprocal obligation. The
   GCC runtime libraries are GPL-3 **with the GCC Runtime Library Exception**, which exists
@@ -199,11 +234,15 @@ publishes `10.0-noble-chiseled` and `10.0-azurelinux3.0-distroless` variants tha
 shell and package manager. Both were confirmed available. That would shrink the image and
 its attack surface; it would not change the legal position, which is already sound.
 
-### The one place copyleft does appear
+### Where copyleft does appear
 
-`integration/` contains poppler under GPL-2-or-GPL-3. See the note above: it is a
-build-time test tool run as a separate process, is linked into nothing, and is not
-published.
+Only in `integration/`, and only in the barcode and text decoders: poppler-utils under
+GPL-2-or-GPL-3, zbar-tools and dmtx-utils under the LGPL. See the note above — each is a
+build-time test tool run as a separate process, is linked into nothing, and is not published.
+
+Nothing a consumer receives carries a copyleft licence. The NuGet package resolves to MIT and
+Apache-2.0 only, and the runtime image adds the Bitstream Vera fonts and the base image
+Microsoft publishes.
 
 ---
 
