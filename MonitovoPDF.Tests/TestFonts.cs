@@ -68,7 +68,7 @@ internal static class TestFonts
 
         // The resolver names a bold face by suffix, so a bold file has to be there under that
         // name or asking for bold silently returns the regular one.
-        var bold = LocateBold()
+        var bold = BoldBeside(source) ?? LocateBold()
             ?? throw new InvalidOperationException(
                 "No bold TrueType font could be found. The suite needs one to tell a bold face "
                 + "from a regular one; install one, or point MONITOVO_TEST_FONTS at a directory "
@@ -83,6 +83,38 @@ internal static class TestFonts
     {
         if (!File.Exists(target) || new FileInfo(target).Length != new FileInfo(source).Length)
             File.Copy(source, target, overwrite: true);
+    }
+
+    /// <summary>
+    /// The bold face belonging to the same family as <paramref name="regular"/>, if it is there.
+    /// </summary>
+    /// <remarks>
+    /// Preferred over any bold face at all, so the pair the tests compare differ in weight and in
+    /// nothing else. Taking DejaVu's bold to go with Liberation's regular would still prove the
+    /// two are distinct, but it would prove it for the wrong reason.
+    /// </remarks>
+    private static string? BoldBeside(string regular)
+    {
+        var directory = Path.GetDirectoryName(regular);
+        if (directory is null)
+            return null;
+
+        var name = Path.GetFileNameWithoutExtension(regular);
+
+        // The conventions in use: a "-Regular" suffix swapped for "-Bold", a bare family name
+        // given one, and the compact Windows form where "arial" becomes "arialbd".
+        string[] candidates =
+        [
+            name.EndsWith("-Regular", StringComparison.OrdinalIgnoreCase)
+                ? name[..^8] + "-Bold"
+                : name + "-Bold",
+            name + "bd",
+            name + "-Bold",
+        ];
+
+        return candidates
+            .Select(candidate => Path.Combine(directory, candidate + ".ttf"))
+            .FirstOrDefault(File.Exists);
     }
 
     private static string? LocateBold()

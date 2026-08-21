@@ -66,8 +66,11 @@ public partial class FieldStyleTests
 
         Assert.Contains("(Sample)", PdfContent.OfFirstPage(bold), StringComparison.Ordinal);
 
-        Assert.Equal("Arial", FontDescriptor(regular));
-        Assert.Equal("Arial,Bold", FontDescriptor(bold));
+        // Which family a host supplies is the host's business — a CI runner may have Liberation
+        // where a desktop has Arial. What has to hold either way is that asking for bold embeds
+        // a different face, and that the different one is the bold.
+        Assert.DoesNotContain("Bold", FontDescriptor(regular), StringComparison.Ordinal);
+        Assert.Contains("Bold", FontDescriptor(bold), StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -140,8 +143,8 @@ public partial class FieldStyleTests
         var honoured = Fill("/F1 9 Tf 0 g", "Helvetica-Bold");
         var overridden = Fill("/F1 9 Tf 0 g", "Helvetica-Bold", new TextOptions { Bold = false });
 
-        Assert.Equal("Arial,Bold", FontDescriptor(honoured));
-        Assert.Equal("Arial", FontDescriptor(overridden));
+        Assert.Contains("Bold", FontDescriptor(honoured), StringComparison.Ordinal);
+        Assert.DoesNotContain("Bold", FontDescriptor(overridden), StringComparison.Ordinal);
     }
 
     [Fact]
