@@ -80,16 +80,24 @@ public partial class FieldStyleTests
     /// The face actually embedded in the output, such as "Arial" or "Arial,Bold".
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Only the subset-tagged names count. The template's own font object survives into the
     /// output and names whatever the designer asked for, so matching the first name in the file
     /// reports what the template wanted rather than what was drawn — which passes whether or not
     /// the weight was honoured. The six-letter tag is dropped because it varies per document.
+    /// </para>
+    /// <para>
+    /// A space in a family name is written as <c>#20</c>, so "Liberation Sans,Bold" arrives as
+    /// "Liberation#20Sans,Bold". The escape has to be part of what is matched: stopping at it
+    /// truncates the name to "Liberation" and takes the weight suffix with it, which is a test
+    /// that fails on any host whose fonts have a space in their name.
+    /// </para>
     /// </remarks>
     private static string FontDescriptor(byte[] pdf)
     {
         var raw = System.Text.Encoding.Latin1.GetString(pdf);
 
-        var embedded = Regex.Matches(raw, @"/BaseFont\s*/[A-Z]{6}\+([A-Za-z0-9,\-]+)")
+        var embedded = Regex.Matches(raw, @"/BaseFont\s*/[A-Z]{6}\+([A-Za-z0-9,\-#]+)")
             .Select(match => match.Groups[1].Value)
             .Distinct()
             .Order(StringComparer.Ordinal)
