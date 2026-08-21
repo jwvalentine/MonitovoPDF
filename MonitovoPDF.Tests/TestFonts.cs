@@ -37,6 +37,19 @@ internal static class TestFonts
         "DejaVuSans.ttf", "Arial.ttf", "arial.ttf", "LiberationSans-Regular.ttf", "Helvetica.ttf",
     ];
 
+    /// <summary>
+    /// Bold faces to look for, so that asking for bold can actually produce a different font.
+    /// </summary>
+    /// <remarks>
+    /// Without one, a request for bold quietly resolves to the regular face and a test asserting
+    /// that bold was honoured passes whatever the code does. A weight the suite cannot tell apart
+    /// is a weight the suite is not testing.
+    /// </remarks>
+    private static readonly string[] BoldFiles =
+    [
+        "DejaVuSans-Bold.ttf", "arialbd.ttf", "Arial-Bold.ttf", "LiberationSans-Bold.ttf",
+    ];
+
     [ModuleInitializer]
     internal static void Install()
     {
@@ -51,11 +64,101 @@ internal static class TestFonts
         var directory = Path.Combine(Path.GetTempPath(), "monitovopdf-tests", "fonts");
         Directory.CreateDirectory(directory);
 
-        var target = Path.Combine(directory, family + ".ttf");
+        Place(source, Path.Combine(directory, family + ".ttf"));
+
+        // The resolver names a bold face by suffix, so a bold file has to be there under that
+        // name or asking for bold silently returns the regular one.
+        var bold = BoldBeside(source) ?? LocateBold()
+            ?? throw new InvalidOperationException(
+                "No bold TrueType font could be found. The suite needs one to tell a bold face "
+                + "from a regular one; install one, or point MONITOVO_TEST_FONTS at a directory "
+                + $"containing one of: {string.Join(", ", BoldFiles)}.");
+
+        var boldTarget = Path.Combine(directory, family + "-Bold.ttf");
+        Place(bold, boldTarget);
+
+        // A "bold" face that is byte-for-byte the regular one proves nothing, and would leave the
+        // weight assertions passing whatever the renderer did. Better to fail here, where the
+        // cause is visible, than in a test whose message would only say the two look alike.
+        if (new FileInfo(boldTarget).Length == new FileInfo(source).Length)
+        {
+            throw new InvalidOperationException(
+                $"The bold face found for these tests ('{bold}') is the same size as the regular "
+                + $"one ('{source}'), so the two cannot be told apart. {Describe(directory)}");
+        }
+
+        Installed = Describe(directory);
+        MonitovoPdf.UseFontDirectory(directory, family);
+    }
+
+    /// <summary>What was actually installed, for a failure message to carry.</summary>
+    internal static string Installed { get; private set; } = "(not installed)";
+
+    private static string Describe(string directory) =>
+        "fonts installed: " + string.Join(", ", Directory.EnumerateFiles(directory, "*.ttf")
+            .Select(path => $"{Path.GetFileName(path)} ({new FileInfo(path).Length} bytes)")
+            .Order(StringComparer.Ordinal));
+
+    private static void Place(string source, string target)
+    {
         if (!File.Exists(target) || new FileInfo(target).Length != new FileInfo(source).Length)
             File.Copy(source, target, overwrite: true);
+    }
 
-        MonitovoPdf.UseFontDirectory(directory, family);
+    /// <summary>
+    /// The bold face belonging to the same family as <paramref name="regular"/>, if it is there.
+    /// </summary>
+    /// <remarks>
+    /// Preferred over any bold face at all, so the pair the tests compare differ in weight and in
+    /// nothing else. Taking DejaVu's bold to go with Liberation's regular would still prove the
+    /// two are distinct, but it would prove it for the wrong reason.
+    /// </remarks>
+    private static string? BoldBeside(string regular)
+    {
+        var directory = Path.GetDirectoryName(regular);
+        if (directory is null)
+            return null;
+
+        var name = Path.GetFileNameWithoutExtension(regular);
+
+        // The conventions in use: a "-Regular" suffix swapped for "-Bold", a bare family name
+        // given one, and the compact Windows form where "arial" becomes "arialbd".
+        string[] candidates =
+        [
+            name.EndsWith("-Regular", StringComparison.OrdinalIgnoreCase)
+                ? name[..^8] + "-Bold"
+                : name + "-Bold",
+            name + "bd",
+            name + "-Bold",
+        ];
+
+        return candidates
+            .Select(candidate => Path.Combine(directory, candidate + ".ttf"))
+            .FirstOrDefault(File.Exists);
+    }
+
+    private static string? LocateBold()
+    {
+        var configured = Environment.GetEnvironmentVariable("MONITOVO_TEST_FONTS");
+
+        return new[] { configured }.Concat(CandidateDirectories)
+            .Where(directory => !string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory))
+            .Select(directory => BoldIn(directory!))
+            .FirstOrDefault(found => found is not null);
+    }
+
+    private static string? BoldIn(string directory)
+    {
+        try
+        {
+            return Directory.EnumerateFiles(directory, "*.ttf", SearchOption.AllDirectories)
+                .FirstOrDefault(path =>
+                    BoldFiles.Contains(Path.GetFileName(path), StringComparer.OrdinalIgnoreCase));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     private static string? Locate()

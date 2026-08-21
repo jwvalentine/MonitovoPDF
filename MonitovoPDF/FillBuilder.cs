@@ -43,6 +43,14 @@ public sealed class FillBuilder
         Claim(field);
         ArgumentNullException.ThrowIfNull(value);
 
+        // A colour that cannot be read would otherwise be ignored, and a value drawn in black
+        // when a colour was asked for is the kind of wrong that only shows up in print.
+        if (options?.Colour is { } colour && LabelRenderer.ParseColour(colour) is null)
+        {
+            throw new ArgumentException(
+                $"'{colour}' is not a colour. Give it as #RRGGBB, for example #C00000.", nameof(options));
+        }
+
         _text[field] = new TextContent(value, options);
         return this;
     }

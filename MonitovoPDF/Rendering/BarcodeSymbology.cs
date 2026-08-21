@@ -93,3 +93,14 @@ internal sealed record FieldState(string? Value, bool? Ticked)
     public IReadOnlyList<string> Chosen =>
         Values.Count > 0 ? Values : Value is null ? [] : [Value];
 }
+
+/// <summary>
+/// What a field's default appearance asks for: a family, a size, a weight and a colour.
+/// </summary>
+/// <remarks>
+/// Every part is optional because a field may say nothing at all, and "asks for nothing" has to
+/// stay distinguishable from "asks for the default" — a caller inspecting a template needs to
+/// know which of the two it is looking at.
+/// </remarks>
+internal readonly record struct FieldLook(
+    string? Family, double? Size, bool Bold, bool Italic, PdfSharp.Drawing.XColor? Colour);

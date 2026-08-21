@@ -147,7 +147,7 @@ internal static class TemplateInspector
         PdfAcroField field, PdfAcroForm form, string name,
         IReadOnlyList<FieldPlacement> placements, string? formAppearance)
     {
-        var (family, size) = LabelRenderer.ReadFieldAppearance(field, form, formAppearance);
+        var look = LabelRenderer.ReadFieldAppearance(field, form, formAppearance);
 
         var kind = field.Elements.GetName("/FT") switch
         {
@@ -169,14 +169,19 @@ internal static class TemplateInspector
             name,
             kind,
             placements,
-            family,
-            size ?? 0,
+            look.Family,
+            look.Size ?? 0,
             alignment,
             (field.Flags & PdfAcroFieldFlags.Multiline) != 0)
         {
             // What a field will accept is exactly what a caller needs before setting it, and is
             // the template's to say rather than the caller's to guess.
             Options = FieldAppearances.OptionsOf(field),
+            IsBold = look.Bold,
+            IsItalic = look.Italic,
+            Colour = look.Colour is { } colour
+                ? $"#{(int)colour.R:X2}{(int)colour.G:X2}{(int)colour.B:X2}"
+                : null,
         };
     }
 

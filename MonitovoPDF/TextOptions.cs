@@ -44,4 +44,20 @@ public sealed record TextOptions
     /// and a value containing a line break wraps regardless.
     /// </summary>
     public bool? Multiline { get; init; }
+
+    /// <summary>Whether to draw in a bold face, overriding what the field asks for.</summary>
+    public bool? Bold { get; init; }
+
+    /// <summary>Whether to draw in an italic face, overriding what the field asks for.</summary>
+    public bool? Italic { get; init; }
+
+    /// <summary>
+    /// Colour to draw in as <c>#RRGGBB</c>, overriding what the field asks for. Null keeps the
+    /// field's own colour, and a field asking for none is drawn in black.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="TemplateField.Colour"/> reports a field's colour in the same form, so a value
+    /// read from one template can be applied to another without conversion.
+    /// </remarks>
+    public string? Colour { get; init; }
 }
