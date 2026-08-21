@@ -443,6 +443,12 @@ survivable and which PDFsharp does not have. Detecting and refusing such a templ
 and deliberately not adopted: it is a guard against a case this library is not built to serve, and
 carrying signature-awareness in order to say no is still carrying signature-awareness.
 
-The existing `TemplateFieldKind.Signature` stays. It reports what a field type is, which is
-description rather than involvement, and removing an enum member would break the public API for
-no gain.
+**`TemplateFieldKind.Signature` stays, and reporting it is not involvement.** `Inspect` is an
+inventory of what a template contains, not a list of what can be filled. `Unknown` has always
+been in that enum and has never been fillable either; nobody reads it as an offer. `Signature`
+is the same category and strictly more useful, because a caller can tell a signature block from
+something the library failed to recognise.
+
+Removing it would also cost more than it saves: an enum member is public API, so deleting one
+forces a major version, and the result would be `/Sig` reporting as `Unknown` — a less accurate
+inventory in exchange for a neutrality that was never in question.
