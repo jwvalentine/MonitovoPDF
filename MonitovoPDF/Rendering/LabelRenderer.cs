@@ -73,10 +73,12 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
         IReadOnlyDictionary<string, TextContent> textValues,
         IReadOnlyDictionary<string, byte[]> imageValues,
         IReadOnlyDictionary<string, BarcodeContent>? barcodeValues = null,
-        IReadOnlyDictionary<(int Page, int Index), ImageSlotContent>? slotValues = null)
+        IReadOnlyDictionary<(int Page, int Index), ImageSlotContent>? slotValues = null,
+        IReadOnlyDictionary<string, FieldState>? stateValues = null)
     {
         barcodeValues ??= new Dictionary<string, BarcodeContent>();
         slotValues ??= new Dictionary<(int, int), ImageSlotContent>();
+        stateValues ??= new Dictionary<string, FieldState>();
 
         using var input = new MemoryStream(templateBytes, writable: false);
 
@@ -98,8 +100,8 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
                     $"The template has {document.PageCount} pages, which exceeds the limit of {_options.MaxPages}.");
             }
 
-            var addressesFields =
-                textValues.Count > 0 || imageValues.Count > 0 || barcodeValues.Count > 0;
+            var addressesFields = textValues.Count > 0 || imageValues.Count > 0
+                || barcodeValues.Count > 0 || stateValues.Count > 0;
 
             // A template whose placeholders are all images has no form, and that is only a problem
             // for a caller who asked for a field by name.
@@ -113,6 +115,7 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
             var textPlacements = new Dictionary<string, IReadOnlyList<Placement>>(StringComparer.Ordinal);
             var imagePlacements = new Dictionary<string, IReadOnlyList<Placement>>(StringComparer.Ordinal);
             var barcodePlacements = new Dictionary<string, IReadOnlyList<Placement>>(StringComparer.Ordinal);
+            var states = new List<ResolvedState>();
 
             if (form is not null)
             {
@@ -125,6 +128,8 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
                 textPlacements = Resolve(textValues.Keys, fields, widgetPages, form, formAppearance, unmatched);
                 imagePlacements = Resolve(imageValues.Keys, fields, widgetPages, form, formAppearance, unmatched);
                 barcodePlacements = Resolve(barcodeValues.Keys, fields, widgetPages, form, formAppearance, unmatched);
+
+                states = ResolveStates(stateValues, fields, widgetPages, form, formAppearance, unmatched);
             }
 
             // Placeholders are found before anything is drawn. Drawing an image into a field adds
@@ -153,6 +158,11 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
                         DrawBarcode(CanvasFor(placement.Page), placement, barcodeValues[name], name);
                 }
 
+                // A chosen option is drawn as text, because flattening removes the control that
+                // would otherwise have shown it.
+                foreach (var state in states.Where(candidate => candidate.IsChoice))
+                    DrawChoice(state, CanvasFor);
+
                 // Placeholder replacement touches only the resource dictionary: the page's own
                 // instructions decide where the replacement lands. A readable barcode value is
                 // the exception, and is drawn onto the page inside the placeholder's own space.
@@ -163,6 +173,12 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
                 foreach (var canvas in canvases.Values)
                     canvas.Dispose();
             }
+
+            // Tick boxes and radio buttons are painted from the template's own artwork, which
+            // means writing drawing operators rather than going through a canvas. Done once the
+            // canvases are closed, so the order the page's instructions end up in is settled.
+            foreach (var state in states.Where(candidate => !candidate.IsChoice))
+                DrawButton(state);
 
             if (form is not null)
                 RemoveFormFields(document, form);
@@ -223,6 +239,157 @@ internal sealed class LabelRenderer(RenderingOptions? options = null)
         }
 
         return resolved;
+    }
+
+    /// <summary>A field to put into a state, with the widgets that show it.</summary>
+    private sealed record ResolvedState(
+        string Name, FieldState State, bool IsChoice, Placement Look,
+        List<(PdfPage Page, PdfDictionary Widget)> Widgets);
+
+    /// <summary>
+    /// Matches every requested state to its field, and refuses a value the field does not offer.
+    /// </summary>
+    /// <remarks>
+    /// Checking the value against the field's own options is the point of doing this before
+    /// anything is drawn. A form recording an answer it never offered is worse than one that
+    /// fails outright, because it looks completed.
+    /// </remarks>
+    private List<ResolvedState> ResolveStates(
+        IReadOnlyDictionary<string, FieldState> states,
+        IReadOnlyDictionary<string, List<PdfAcroField>> fields,
+        IReadOnlyDictionary<PdfObjectID, PdfPage> widgetPages,
+        PdfAcroForm form,
+        string? formAppearance,
+        List<string> unmatched)
+    {
+        var resolved = new List<ResolvedState>();
+
+        foreach (var (name, state) in states)
+        {
+            if (!fields.TryGetValue(name, out var sharing) || sharing.Count == 0)
+            {
+                unmatched.Add(name);
+                continue;
+            }
+
+            foreach (var field in sharing)
+            {
+                var widgets = WidgetsOf(field, widgetPages);
+                if (widgets.Count == 0)
+                    continue;
+
+                var isChoice = field.Elements.GetName("/FT") == "/Ch";
+                var permitted = FieldAppearances.OptionsOf(field);
+
+                // An empty list means the field does not constrain its value — a combo box a
+                // person may type into, for instance — so there is nothing to check against.
+                if (state.Ticked is null && permitted.Count > 0)
+                {
+                    var rejected = state.Chosen
+                        .Where(value => !permitted.Contains(value, StringComparer.Ordinal))
+                        .ToList();
+
+                    if (rejected.Count > 0)
+                    {
+                        throw new TemplateRenderException(
+                            $"Field '{name}' does not offer {string.Join(", ", rejected.Select(value => $"'{value}'"))}. "
+                            + $"It offers: {string.Join(", ", permitted)}.");
+                    }
+                }
+
+                var (family, size) = ReadAppearance(field, form, formAppearance);
+                var alignment = field.Elements.GetInteger("/Q") switch
+                {
+                    1 => XStringAlignment.Center,
+                    2 => XStringAlignment.Far,
+                    _ => XStringAlignment.Near
+                };
+
+                var look = new Placement(
+                    widgets[0].Page, ToCanvasRect(widgets[0].Widget.Elements.GetRectangle("/Rect"), widgets[0].Page),
+                    family, size, alignment, state.Chosen.Count > 1);
+
+                resolved.Add(new ResolvedState(name, state, isChoice, look, widgets));
+            }
+        }
+
+        if (unmatched.Count > 0 && _options.OnMissingField == MissingFieldBehaviour.Throw)
+        {
+            throw new TemplateRenderException(
+                $"The template has no usable field named: {string.Join(", ", unmatched.Order(StringComparer.Ordinal))}. "
+                + "Set RenderingOptions.OnMissingField to Ignore to draw what does match instead.");
+        }
+
+        return resolved;
+    }
+
+    /// <summary>The widget annotations a field shows itself through, with the page each is on.</summary>
+    private static List<(PdfPage Page, PdfDictionary Widget)> WidgetsOf(
+        PdfAcroField field, IReadOnlyDictionary<PdfObjectID, PdfPage> widgetPages)
+    {
+        var found = new List<(PdfPage, PdfDictionary)>();
+        var kids = field.Elements.GetArray("/Kids");
+
+        if (kids is not null && kids.Elements.Count > 0)
+        {
+            for (var i = 0; i < kids.Elements.Count; i++)
+            {
+                if (kids.Elements[i] is PdfReference { Value: PdfDictionary widget } reference
+                    && widgetPages.TryGetValue(reference.ObjectID, out var page))
+                {
+                    found.Add((page, widget));
+                }
+            }
+        }
+        else if (field.Reference is not null && widgetPages.TryGetValue(field.Reference.ObjectID, out var own))
+        {
+            found.Add((own, field));
+        }
+
+        return found;
+    }
+
+    /// <summary>Draws the chosen option or options as text, where the control used to be.</summary>
+    private void DrawChoice(ResolvedState state, Func<PdfPage, XGraphics> canvasFor)
+    {
+        var value = string.Join('\n', state.State.Chosen);
+        if (value.Length == 0)
+            return;
+
+        foreach (var (page, widget) in state.Widgets)
+        {
+            var bounds = ToCanvasRect(widget.Elements.GetRectangle("/Rect"), page);
+            if (bounds.Width <= 0 || bounds.Height <= 0)
+                continue;
+
+            DrawText(canvasFor(page), state.Look with { Page = page, Bounds = bounds }, new TextContent(value, null));
+        }
+    }
+
+    /// <summary>
+    /// Puts each of a field's buttons into the state the caller asked for.
+    /// </summary>
+    /// <remarks>
+    /// A set of radio buttons is one field with several widgets, exactly one of which may be on,
+    /// so every widget is visited and the others are explicitly turned off. A tick box is the
+    /// same shape with one widget.
+    /// </remarks>
+    private void DrawButton(ResolvedState state)
+    {
+        foreach (var (page, widget) in state.Widgets)
+        {
+            // What the caller asked for, which is settled before looking at the widget. A box the
+            // template gives no artwork for still has to end up drawn the way it was asked for.
+            var ticked = state.State.Ticked
+                ?? FieldAppearances.OnStateOf(widget) == $"/{state.State.Value}";
+
+            var wanted = ticked
+                ? FieldAppearances.OnStateOf(widget)
+                : FieldAppearances.OffState;
+
+            if (wanted is null || !FieldAppearances.Draw(page, widget, wanted))
+                FieldAppearances.DrawFallback(page, widget, ticked);
+        }
     }
 
     private List<Placement> PlacementsFor(

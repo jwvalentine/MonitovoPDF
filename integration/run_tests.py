@@ -331,6 +331,86 @@ def run_barcode_caption_checks(template_b64):
         decodes_everywhere(path, f"caption-{name}", "code128", value)
 
 
+def ink(path, dpi=300):
+    """Counts the dark pixels on the first page, as a measure of what was drawn."""
+    from PIL import Image
+
+    images = barcodes.rasterise_with_pdfium(path, os.path.splitext(path)[0] + "-ink", dpi)
+    if not images:
+        return 0
+
+    with Image.open(images[0]) as page:
+        return sum(1 for pixel in page.convert("L").getdata() if pixel < 128)
+
+
+def run_form_control_checks():
+    """Fills the field types a business form is made of, in a template LibreOffice authored.
+
+    Tick boxes and dropdowns are most of a real form, and they are where a synthesised fixture
+    is least trustworthy: what a tool actually writes for them — whether each state carries its
+    own artwork, how the options are encoded — is not something to assume. LibreOffice writes
+    the options as UTF-16 hex strings rather than as literals, which a hand-built fixture would
+    never have shown.
+    """
+    print("\nBuilding a form-controls template with LibreOffice")
+    template_path = os.path.join(OUTPUT_DIR, "form-controls.pdf")
+    make_template.form_controls(template_path)
+
+    template = open(template_path, "rb").read()
+    check("the form template carries a tick box", b"/Btn" in template)
+    check("the form template carries a dropdown", b"/Ch" in template)
+    check("the tick box states carry their own artwork", b"/AP" in template,
+          "no appearance streams, so there is nothing to paint from")
+
+    template_b64 = base64.b64encode(template).decode()
+
+    def render(name, payload):
+        status, body, _ = post("/v1/labels", {"template": template_b64, **payload})
+        check(f"the {name} render succeeds", status == 200, f"status {status}: {body[:300]!r}")
+
+        if status != 200:
+            return None
+
+        path = os.path.join(OUTPUT_DIR, f"form-{name}.pdf")
+        with open(path, "wb") as handle:
+            handle.write(body)
+
+        check(f"the {name} output is flat", b"/Widget" not in body)
+        return path
+
+    ticked = render("ticked", {"checkboxes": {"agree": True}, "choices": {"country": ["Portugal"]}})
+    cleared = render("cleared", {"checkboxes": {"agree": False}, "choices": {"country": ["Japan"]}})
+
+    if not ticked or not cleared:
+        return
+
+    # The chosen option has to survive as text, because flattening removed the control that
+    # would have shown it.
+    check("the chosen option is readable in the output", "Portugal" in extract_text(ticked),
+          f"pdftotext saw: {extract_text(ticked).strip()[:200]!r}")
+    check("a different choice gives a different answer", "Japan" in extract_text(cleared))
+    check("the blank template carried neither", "Portugal" not in extract_text(template_path))
+
+    # Whether the box was ticked is not something text extraction can see, so it is measured:
+    # the two documents differ only by the tick, so the ticked one must carry more ink.
+    ticked_ink, cleared_ink = ink(ticked), ink(cleared)
+    print(f"        dark pixels — ticked {ticked_ink}, cleared {cleared_ink}")
+
+    check("ticking the box puts more ink on the page than clearing it",
+          ticked_ink > cleared_ink, f"ticked {ticked_ink} vs cleared {cleared_ink}")
+    check("a cleared box still draws something", cleared_ink > 0)
+
+    # An answer the form does not offer must be refused rather than drawn onto it.
+    status, body, _ = post("/v1/labels", {
+        "template": template_b64,
+        "choices": {"country": ["Atlantis"]},
+    })
+
+    check("an option the form does not offer is rejected", status == 400, f"status {status}")
+    check("the error names the options that are offered", b"Ireland" in body,
+          body[:200].decode(errors="replace"))
+
+
 def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     template_path = os.path.join(OUTPUT_DIR, "template.pdf")
@@ -415,6 +495,7 @@ def main():
     run_barcode_checks()
     run_image_slot_checks()
     run_barcode_caption_checks(template_b64)
+    run_form_control_checks()
 
     print()
     if failures:

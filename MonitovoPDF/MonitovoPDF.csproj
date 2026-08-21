@@ -14,7 +14,7 @@
       package as a pre-release, and the README says to expect breaking changes, so the version
       should say so too. A release tag overrides this at pack time.
     -->
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <Authors>Monitovo LLC</Authors>
     <Company>Monitovo LLC</Company>
     <Copyright>Copyright (c) 2026 Monitovo LLC</Copyright>

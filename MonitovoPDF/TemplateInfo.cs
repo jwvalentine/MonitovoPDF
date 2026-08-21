@@ -50,7 +50,18 @@ public sealed record TemplateField(
     string? FontFamily,
     double FontSizePoints,
     TextAlignment Alignment,
-    bool IsMultiline);
+    bool IsMultiline)
+{
+    /// <summary>
+    /// The values this field accepts, for a dropdown, list box or set of radio buttons.
+    /// </summary>
+    /// <remarks>
+    /// Empty for a field that does not constrain its value, which includes every text field and
+    /// a combo box a person may type into. These come from the template rather than the caller,
+    /// so this is the list <see cref="FillBuilder.SetChoice(string, string)"/> will accept.
+    /// </remarks>
+    public IReadOnlyList<string> Options { get; init; } = [];
+}
 
 /// <summary>Where one occurrence of a field sits on a page.</summary>
 /// <param name="PageNumber">One-based page number.</param>

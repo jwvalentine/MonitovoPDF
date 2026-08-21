@@ -105,6 +105,70 @@ def build_document(desktop):
     return document
 
 
+def build_form_controls(desktop):
+    """Creates a document carrying a tick box, a dropdown and a pair of radio buttons.
+
+    These are what a business form is mostly made of, as opposed to the text fields a label
+    uses, and a real authoring tool is the only way to find out what it actually emits for
+    them — in particular whether it writes appearance streams for each state, which is what
+    the library paints when it fills one.
+    """
+    document = desktop.loadComponentFromURL(
+        "private:factory/swriter", "_blank", 0, ())
+
+    draw_page = document.DrawPage
+
+    def place(control, name, x, y, width, height):
+        control.Name = name
+
+        shape = document.createInstance("com.sun.star.drawing.ControlShape")
+        shape.setSize(Size(width * MM, height * MM))
+        shape.setControl(control)
+        draw_page.add(shape)
+
+        shape.AnchorType = AT_PAGE
+        shape.HoriOrient = HORI_NONE
+        shape.VertOrient = VERT_NONE
+        shape.HoriOrientRelation = PAGE_FRAME
+        shape.VertOrientRelation = PAGE_FRAME
+        shape.setPosition(Point(x * MM, y * MM))
+
+        if shape.AnchorType != AT_PAGE:
+            raise RuntimeError(f"Control '{name}' would not anchor to the page.")
+
+    box = document.createInstance("com.sun.star.form.component.CheckBox")
+    place(box, "agree", 20, 20, 6, 6)
+
+    combo = document.createInstance("com.sun.star.form.component.ListBox")
+    combo.StringItemList = ("Ireland", "Portugal", "Japan")
+    combo.Dropdown = True
+    place(combo, "country", 20, 40, 60, 8)
+
+    return document
+
+
+def form_controls(output_path):
+    """Builds the form-controls template and writes it to disk."""
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    process = start_libreoffice()
+    try:
+        context = connect()
+        desktop = context.ServiceManager.createInstanceWithContext(
+            "com.sun.star.frame.Desktop", context)
+
+        document = build_form_controls(desktop)
+        try:
+            export_pdf(document, output_path)
+        finally:
+            document.close(False)
+    finally:
+        process.terminate()
+        process.wait(timeout=30)
+
+    return output_path
+
+
 def export_pdf(document, path):
     """Exports to PDF with form export enabled, so the controls become AcroForm fields."""
     filter_data = (

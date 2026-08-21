@@ -172,7 +172,12 @@ internal static class TemplateInspector
             family,
             size ?? 0,
             alignment,
-            (field.Flags & PdfAcroFieldFlags.Multiline) != 0);
+            (field.Flags & PdfAcroFieldFlags.Multiline) != 0)
+        {
+            // What a field will accept is exactly what a caller needs before setting it, and is
+            // the template's to say rather than the caller's to guess.
+            Options = FieldAppearances.OptionsOf(field),
+        };
     }
 
     private static List<FieldPlacement> PlacementsOf(

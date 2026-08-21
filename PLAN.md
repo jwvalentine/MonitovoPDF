@@ -367,3 +367,49 @@ not shown. The number a person reads off the label is the number they were given
 printing a longer one underneath would send them looking for something that does not exist.
 EAN and UPC prescribe a grouped layout and an outset digit; that is not attempted, and a caller
 needing it should say so.
+
+## Decision 15 — The other field types — **DECIDED: paint the template's own artwork**
+
+A template arrives, its fields are filled from whatever the data system holds, and the result is
+flat. Nothing about that changes with what the template depicts — a label and a claim form are
+the same operation. Which made it awkward that the library implemented one of the four field
+types PDF defines, and awkward in a way that only showed up on the forms: text is most of a
+label and almost none of a business form, where tick boxes and dropdowns carry the answers.
+
+Buttons and choices are now filled. Signature fields are not; see below.
+
+**A tick box is drawn from the template's own artwork.** A widget carries a small form XObject
+per state, and the tick, the box and the weight of both are the designer's. Painting the state
+asked for is therefore both the faithful answer and the simpler one — the alternative is
+choosing a glyph, a size and a stroke width that the template already decided. Mapping it onto
+the widget's rectangle follows the mapping the specification prescribes for exactly this, which
+is what makes the result identical to what a viewer would have shown.
+
+That also repairs something flattening quietly broke. A box's outline usually lives in the
+widget rather than in the page, so removing the form removed the box. An unticked box is
+therefore painted rather than skipped, and "clear this box" is a different instruction from
+"leave this box alone" — a template may ship one ticked.
+
+**The options belong to the template.** A dropdown carries `/Opt`; a radio group is defined by
+the states its widgets answer to. A caller chooses from what is there, and a value the field
+does not offer is refused. A form recording an answer it never offered is worse than one that
+fails, because it looks completed. `Inspect` reports the list so a caller need not guess it.
+
+The choice itself is drawn as text where the control was, because flattening removes the
+control that would have shown it.
+
+**Verified against a real tool, which mattered.** LibreOffice writes `/Opt` as UTF-16 hex
+strings rather than as literals — a synthesised fixture using literals would have passed while
+the real thing failed. It also confirmed that a real authoring tool does write per-state
+artwork, which the whole approach depends on. The end-to-end check now fills a LibreOffice form
+and measures the rasterised page: the ticked document carries more ink than the cleared one,
+which is the only way to assert a tick from the outside.
+
+**Signature fields are out of scope for now, and it is not the dependency that stops it.**
+PDFsharp already ships a signer, which is why `System.Security.Cryptography.Pkcs` is in the
+graph. What stops it is that signing is asynchronous throughout while this API is synchronous
+by design (Decision 2); that it takes a private key, making a library that currently handles no
+secrets handle them; that timestamping reaches an external server, making a library that
+currently opens no sockets open them; and that a signature is a form field, so signing and
+flattening pull against each other. Each of those is a decision rather than an implementation,
+and they should be taken deliberately rather than because the package was already referenced.
