@@ -74,10 +74,30 @@ internal static class TestFonts
                 + "from a regular one; install one, or point MONITOVO_TEST_FONTS at a directory "
                 + $"containing one of: {string.Join(", ", BoldFiles)}.");
 
-        Place(bold, Path.Combine(directory, family + "-Bold.ttf"));
+        var boldTarget = Path.Combine(directory, family + "-Bold.ttf");
+        Place(bold, boldTarget);
 
+        // A "bold" face that is byte-for-byte the regular one proves nothing, and would leave the
+        // weight assertions passing whatever the renderer did. Better to fail here, where the
+        // cause is visible, than in a test whose message would only say the two look alike.
+        if (new FileInfo(boldTarget).Length == new FileInfo(source).Length)
+        {
+            throw new InvalidOperationException(
+                $"The bold face found for these tests ('{bold}') is the same size as the regular "
+                + $"one ('{source}'), so the two cannot be told apart. {Describe(directory)}");
+        }
+
+        Installed = Describe(directory);
         MonitovoPdf.UseFontDirectory(directory, family);
     }
+
+    /// <summary>What was actually installed, for a failure message to carry.</summary>
+    internal static string Installed { get; private set; } = "(not installed)";
+
+    private static string Describe(string directory) =>
+        "fonts installed: " + string.Join(", ", Directory.EnumerateFiles(directory, "*.ttf")
+            .Select(path => $"{Path.GetFileName(path)} ({new FileInfo(path).Length} bytes)")
+            .Order(StringComparer.Ordinal));
 
     private static void Place(string source, string target)
     {

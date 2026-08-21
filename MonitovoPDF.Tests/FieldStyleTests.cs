@@ -69,8 +69,11 @@ public partial class FieldStyleTests
         // Which family a host supplies is the host's business — a CI runner may have Liberation
         // where a desktop has Arial. What has to hold either way is that asking for bold embeds
         // a different face, and that the different one is the bold.
-        Assert.DoesNotContain("Bold", FontDescriptor(regular), StringComparison.Ordinal);
-        Assert.Contains("Bold", FontDescriptor(bold), StringComparison.Ordinal);
+        Assert.False(FontDescriptor(regular).Contains("Bold", StringComparison.Ordinal),
+            $"Regular embedded '{FontDescriptor(regular)}'. {TestFonts.Installed}");
+
+        Assert.True(FontDescriptor(bold).Contains("Bold", StringComparison.Ordinal),
+            $"Bold embedded '{FontDescriptor(bold)}'. {TestFonts.Installed}");
     }
 
     /// <summary>
@@ -143,8 +146,11 @@ public partial class FieldStyleTests
         var honoured = Fill("/F1 9 Tf 0 g", "Helvetica-Bold");
         var overridden = Fill("/F1 9 Tf 0 g", "Helvetica-Bold", new TextOptions { Bold = false });
 
-        Assert.Contains("Bold", FontDescriptor(honoured), StringComparison.Ordinal);
-        Assert.DoesNotContain("Bold", FontDescriptor(overridden), StringComparison.Ordinal);
+        Assert.True(FontDescriptor(honoured).Contains("Bold", StringComparison.Ordinal),
+            $"Honoured embedded '{FontDescriptor(honoured)}'. {TestFonts.Installed}");
+
+        Assert.False(FontDescriptor(overridden).Contains("Bold", StringComparison.Ordinal),
+            $"Overridden embedded '{FontDescriptor(overridden)}'. {TestFonts.Installed}");
     }
 
     [Fact]
