@@ -405,11 +405,44 @@ artwork, which the whole approach depends on. The end-to-end check now fills a L
 and measures the rasterised page: the ticked document carries more ink than the cleared one,
 which is the only way to assert a tick from the outside.
 
-**Signature fields are out of scope for now, and it is not the dependency that stops it.**
-PDFsharp already ships a signer, which is why `System.Security.Cryptography.Pkcs` is in the
-graph. What stops it is that signing is asynchronous throughout while this API is synchronous
-by design (Decision 2); that it takes a private key, making a library that currently handles no
-secrets handle them; that timestamping reaches an external server, making a library that
-currently opens no sockets open them; and that a signature is a form field, so signing and
-flattening pull against each other. Each of those is a decision rather than an implementation,
-and they should be taken deliberately rather than because the package was already referenced.
+Signature fields are not filled. See Decision 16.
+
+## Decision 16 — Signatures — **DECIDED: no involvement, in either direction**
+
+This library does not create signatures, does not verify them, does not inspect a document for
+them and does not refuse one that carries them. Signatures are simply not a thing it has an
+opinion about.
+
+**The layering is what settles it.** Signing attests to a finished document, and finishing the
+document is where this library's job ends. `Fill` returns bytes; anything that signs takes bytes.
+So signing after us is not a workaround, it is the natural order — nothing is lost by our staying
+out, and a caller who needs it has PDFsharp's own signer already in their dependency graph, or a
+product built for it.
+
+**The dependency was never the constraint**, which is worth recording because it looks like one.
+PDFsharp ships a signer, and that is why `System.Security.Cryptography.Pkcs` appears in the
+graph. What actually stops it is that signing is asynchronous throughout where this API is
+synchronous by design (Decision 2); that it takes a private key, into a library that handles no
+secrets; and that timestamping reaches an external server, from a library that opens no sockets.
+None of that is difficulty. It is a different job.
+
+**A signature image is not a signature, and is already supported.** A picture of somebody's
+handwriting dropped into a signature block is `SetImage` — an image in a field, nothing
+cryptographic, and the right answer for the very common form that just needs the block filled.
+
+**An attestation without cryptography behind it was considered and rejected.** Drawing "signed at
+14:32, hash 8f3a…" onto the page proves nothing: the document can be edited afterwards and the
+block still says it. It is a claim rendered to look like evidence, which is worse than drawing
+nothing, and building it honestly would mean building the thing above.
+
+**Known consequence, accepted.** Filling a template that is already signed produces output whose
+signature no longer validates, and nothing in the output says so. That follows from rewriting the
+document rather than appending to it — commercial libraries sign by incremental update, leaving
+the original bytes untouched, which is the capability that would make filling a signed document
+survivable and which PDFsharp does not have. Detecting and refusing such a template was proposed
+and deliberately not adopted: it is a guard against a case this library is not built to serve, and
+carrying signature-awareness in order to say no is still carrying signature-awareness.
+
+The existing `TemplateFieldKind.Signature` stays. It reports what a field type is, which is
+description rather than involvement, and removing an enum member would break the public API for
+no gain.
