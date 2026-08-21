@@ -155,10 +155,18 @@ Nothing below is shipped to consumers. It is listed so the distinction is on the
 | zxing-cpp | Apache-2.0 | `integration/` image |
 | pypdfium2 | BSD-3-Clause / Apache-2.0 | `integration/` image |
 | pillow | MIT-CMU | `integration/` image |
+| reportlab | BSD-3-Clause | `integration/` image |
+| charset-normalizer | MIT | `integration/` image, via reportlab |
 
 The licences of the Debian packages were read from each package's own
 `/usr/share/doc/<package>/copyright` inside the built image, and those of the Python packages
-from their installed distribution metadata, rather than from a summary elsewhere.
+from their installed licence files and distribution metadata, rather than from a summary
+elsewhere. Where a package's metadata says only "BSD", the licence text itself was read to
+find out which one: ReportLab's carries all three clauses, so it is BSD-3-Clause.
+
+The Python list is the full closure rather than what was asked for, because a package brings
+what it brings — `charset-normalizer` arrived with ReportLab and would otherwise have gone
+unrecorded, which is how a list like this stops being true.
 
 ### On the copyleft tools in the integration image
 

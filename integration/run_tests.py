@@ -411,6 +411,76 @@ def run_form_control_checks():
           body[:200].decode(errors="replace"))
 
 
+def run_second_authoring_tool_checks():
+    """Fills a form written by ReportLab rather than by LibreOffice.
+
+    One authoring tool proves the library works against that tool. Whether a tick box carries
+    one piece of artwork per state, what a set of radio buttons calls the states its buttons
+    answer to, how a dropdown encodes its options — each writer decides for itself, and testing
+    against a single writer tests this library's assumptions rather than the format. ReportLab
+    shares no code with LibreOffice, so where the two disagree is where the assumptions were.
+    """
+    import reportlab_form
+
+    print("\nBuilding a form with ReportLab, an unrelated PDF writer")
+    template_path = reportlab_form.build(os.path.join(OUTPUT_DIR, "reportlab-form.pdf"))
+    template = open(template_path, "rb").read()
+    print(f"        wrote {template_path} ({len(template)} bytes)")
+
+    status, body, _ = post("/v1/labels", {
+        "template": base64.b64encode(template).decode(),
+        "checkboxes": {"agree": True},
+        "choices": {"size": ["Large"], "country": ["Japan"], "sizes": ["S", "L"]},
+    })
+
+    check("a ReportLab form renders", status == 200, f"status {status}: {body[:400]!r}")
+
+    if status != 200:
+        return
+
+    path = os.path.join(OUTPUT_DIR, "reportlab-filled.pdf")
+    with open(path, "wb") as handle:
+        handle.write(body)
+
+    check("the ReportLab output is flat", b"/Widget" not in body)
+
+    text = extract_text(path)
+    check("the dropdown choice is readable", "Japan" in text, f"pdftotext saw: {text.strip()[:200]!r}")
+    check("both list box choices are readable", "S" in text and "L" in text)
+
+    # Radio buttons are the case that broke against a numbered group, so the same measurement
+    # is applied here: selecting one of them has to put more ink on the page than selecting
+    # none, whatever this writer decided to call its states.
+    none_selected = post("/v1/labels", {
+        "template": base64.b64encode(template).decode(),
+        "checkboxes": {"agree": False},
+    })
+
+    check("the same form renders with nothing selected", none_selected[0] == 200,
+          f"status {none_selected[0]}: {none_selected[1][:300]!r}")
+
+    if none_selected[0] != 200:
+        return
+
+    blank_path = os.path.join(OUTPUT_DIR, "reportlab-blank.pdf")
+    with open(blank_path, "wb") as handle:
+        handle.write(none_selected[1])
+
+    filled_ink, blank_ink = ink(path), ink(blank_path)
+    print(f"        dark pixels — filled {filled_ink}, blank {blank_ink}")
+
+    check("filling the form puts more ink on the page than leaving it",
+          filled_ink > blank_ink, f"filled {filled_ink} vs blank {blank_ink}")
+
+    # A value this writer's form does not offer must still be refused.
+    status, body, _ = post("/v1/labels", {
+        "template": base64.b64encode(template).decode(),
+        "choices": {"country": ["Atlantis"]},
+    })
+
+    check("an option a ReportLab form does not offer is rejected", status == 400, f"status {status}")
+
+
 def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     template_path = os.path.join(OUTPUT_DIR, "template.pdf")
@@ -496,6 +566,7 @@ def main():
     run_image_slot_checks()
     run_barcode_caption_checks(template_b64)
     run_form_control_checks()
+    run_second_authoring_tool_checks()
 
     print()
     if failures:
